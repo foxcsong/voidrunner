@@ -154,10 +154,23 @@ const App: React.FC = () => {
     localStorage.removeItem(SAVE_KEY);
     const map = MazeGen.generateMaze(Constants.MAP_SIZE);
     const deadEnds = MazeGen.findDeadEnds(map);
+
+    // Find the furthest dead end for the EXIT first
+    let exitPos = { x: Constants.MAP_SIZE - 2, y: Constants.MAP_SIZE - 2 };
+    let maxDist = 0;
+    deadEnds.forEach(pos => {
+      const dist = Math.sqrt((pos.x - 1.5) ** 2 + (pos.y - 1.5) ** 2);
+      if (dist > maxDist) {
+        maxDist = dist;
+        exitPos = pos;
+      }
+    });
+
     const entities: Types.Entity[] = [];
 
     deadEnds.forEach((pos, i) => {
       if (pos.x <= 4 && pos.y <= 4) return;
+      if (pos.x === exitPos.x && pos.y === exitPos.y) return; // DON'T BLOCK EXIT
       const type = Math.random() > 0.4 ? Types.EntityType.CHEST : Types.EntityType.MONSTER;
       const items: Types.InventoryItem[] = [];
       if (type === Types.EntityType.CHEST) {
@@ -182,9 +195,10 @@ const App: React.FC = () => {
       });
     });
 
+
     setGameState({
       player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [{ id: 'init-f', type: Types.ItemType.FLASHLIGHT, name: 'FLASHLIGHT', durability: 100 }], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false, hitFlash: 0 },
-      map, entities, isGameOver: false, deathReason: '', message: 'SYSTEM_BOOT_COMPLETE', messageTimeout: 4, chaseActive: false, survivalTime: 0, isPaused: false, activeChestId: null, draggingItemId: null
+      map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '', message: 'SYSTEM_BOOT_COMPLETE', messageTimeout: 4, chaseActive: false, survivalTime: 0, isPaused: false, activeChestId: null, draggingItemId: null
     });
     setScreen('PLAYING');
     damageNumbersRef.current = [];
@@ -364,7 +378,7 @@ const App: React.FC = () => {
       .filter(dn => dn.life > 0);
 
     setGameState(prev => {
-      if (!prev || prev.isGameOver || prev.isPaused) return prev;
+      if (!prev || prev.isGameOver || prev.isVictory || prev.isPaused) return prev;
 
       const nextSurvivalTime = prev.survivalTime + delta;
       let nextMessageTimeout = prev.messageTimeout > 0 ? prev.messageTimeout - delta : 0;
@@ -583,16 +597,15 @@ const App: React.FC = () => {
 
       let activeChestId = prev.activeChestId;
       if (keysRef.current['KeyE']) {
-        const nearChest = prev.entities.find(e => e.type === Types.EntityType.CHEST && Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2) < 1.6);
-        if (nearChest) {
-          activeChestId = nearChest.id;
-          const chestIndex = nextEntities.findIndex(ce => ce.id === nearChest.id);
-          if (chestIndex !== -1) nextEntities[chestIndex].data.isOpen = true;
-        }
+        // ... (omitting lines for matching)
       } else if (activeChestId) {
         const c = nextEntities.find(e => e.id === activeChestId);
         if (!c || Math.sqrt((c.x - player.x) ** 2 + (c.y - player.y) ** 2) > 1.8) activeChestId = null;
       }
+
+      // EXIT / VICTORY CHECK
+      const distToExit = Math.sqrt((player.x - prev.exitX) ** 2 + (player.y - prev.exitY) ** 2);
+      const isVictory = distToExit < 0.6;
 
       return {
         ...prev,
@@ -603,6 +616,7 @@ const App: React.FC = () => {
         message: nextMessage,
         activeChestId,
         isGameOver: player.health <= 0,
+        isVictory,
         deathReason: player.health <= 0 ? "VITAL_SYSTEM_FAILURE" : ""
       };
     });
@@ -665,7 +679,7 @@ const App: React.FC = () => {
 
     // PREPARE RENDER LIST FOR Y-SORTING
     interface RenderItem {
-      type: 'WALL' | 'ENTITY' | 'PLAYER' | 'PARTICLE' | 'DAMAGE_NUMBER';
+      type: 'WALL' | 'ENTITY' | 'PLAYER' | 'PARTICLE' | 'DAMAGE_NUMBER' | 'EXIT';
       y: number; // sort key (bottom of object)
       draw: () => void;
     }
@@ -713,6 +727,44 @@ const App: React.FC = () => {
           ctx.restore();
         }
       });
+    });
+
+    // Add Exit (Always at the end of renderList for transparency/glow)
+    renderList.push({
+      type: 'EXIT',
+      y: gameState.exitY * s,
+      draw: () => {
+        const x = gameState.exitX * s;
+        const y = gameState.exitY * s;
+        const time = performance.now() * 0.002;
+        const pulse = Math.sin(time) * 10;
+        const float = Math.sin(time * 0.5) * 5;
+
+        ctx.save();
+        // 1. Massive Ground Glow
+        const groundGrad = ctx.createRadialGradient(x, y, 5, x, y, 70 + pulse);
+        groundGrad.addColorStop(0, 'rgba(0, 255, 255, 0.4)');
+        groundGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = groundGrad;
+        ctx.beginPath(); ctx.arc(x, y, 80 + pulse, 0, Math.PI * 2); ctx.fill();
+
+        // 2. Vertical Light Beam
+        const beamGrad = ctx.createLinearGradient(x - 20, y, x + 20, y);
+        beamGrad.addColorStop(0, 'rgba(0, 255, 255, 0)');
+        beamGrad.addColorStop(0.5, 'rgba(0, 255, 255, 0.2)');
+        beamGrad.addColorStop(1, 'rgba(0, 255, 255, 0)');
+        ctx.fillStyle = beamGrad;
+        ctx.fillRect(x - 20, y - 200, 40, 200);
+
+        // 3. Core Floating Orb
+        ctx.fillStyle = '#fff';
+        ctx.shadowBlur = 30;
+        ctx.shadowColor = '#0cf';
+        ctx.beginPath();
+        ctx.arc(x, y - 10 + float, 12 + Math.sin(time * 2) * 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     });
 
     // Add Entities
@@ -1215,6 +1267,19 @@ const App: React.FC = () => {
           <h1 className="text-8xl font-black text-red-600 mb-4 flicker uppercase leading-none tracking-tighter">DIED</h1>
           <p className="text-zinc-500 mb-16 italic text-sm tracking-[0.5em] font-bold uppercase">"{gameState.deathReason}"</p>
           <button onClick={returnToMenu} className="px-12 py-4 bg-zinc-800 border border-zinc-700 text-white text-xs hover:bg-zinc-700 transition-all uppercase font-black tracking-[0.3em] rounded-lg active:scale-95">RESTART MISSION</button>
+        </div>
+      )}
+
+      {gameState.isVictory && (
+        <div className="fixed inset-0 bg-zinc-950 z-[99999] flex flex-col items-center justify-center text-center p-10 animate-fade-in">
+          <div className="absolute inset-0 bg-blue-500/10 pointer-events-none" />
+          <h1 className="text-8xl font-black text-cyan-400 mb-4 animate-pulse uppercase leading-none tracking-tighter drop-shadow-[0_0_20px_rgba(34,211,238,0.5)]">EVACUATED</h1>
+          <p className="text-zinc-500 mb-16 italic text-sm tracking-[0.5em] font-bold uppercase">"CORE_SYSTEM_SECURED // EXPEDITION_SUCCESS"</p>
+          <div className="bg-zinc-900/50 border border-zinc-800 p-8 rounded-2xl mb-12 w-full max-w-sm">
+            <div className="text-zinc-500 text-[10px] uppercase tracking-widest mb-2 font-bold">Mission Time</div>
+            <div className="text-4xl text-white font-mono">{Math.floor(gameState.survivalTime)} SECONDS</div>
+          </div>
+          <button onClick={returnToMenu} className="px-12 py-5 bg-cyan-600 border border-cyan-400 text-white hover:bg-cyan-500 transition-all uppercase font-black tracking-[0.3em] rounded-xl active:scale-95 shadow-lg shadow-cyan-900/40">RETURN TO HUB</button>
         </div>
       )}
 

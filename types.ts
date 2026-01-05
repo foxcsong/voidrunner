@@ -59,6 +59,9 @@ export interface GameState {
   map: number[][];
   entities: Entity[];
   isGameOver: boolean;
+  isVictory: boolean;
+  exitX: number;
+  exitY: number;
   deathReason: string;
   message: string;
   messageTimeout: number;
