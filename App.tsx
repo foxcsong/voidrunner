@@ -251,9 +251,9 @@ const App: React.FC = () => {
       newEntities = newEntities.map(e => {
         if (e.type === Types.EntityType.MONSTER && e.health! > 0) {
           const dist = Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2);
-          // Allow hit if very close OR if LOS is clear
+          // Require clear line of sight for hits
           const hasLos = isLineOfSightClear(player.x, player.y, e.x, e.y, gameState.map);
-          if (dist < 0.8 && (dist < 1.5 || hasLos)) {
+          if (dist < 0.8 && hasLos) {
             spawnDamageNumber(e.x, e.y - 0.5, 40, '#fbbf24');
             return { ...e, health: e.health! - 40, data: { ...e.data, hitFlash: 0.2, state: 'CHASING' } };
           }
@@ -266,7 +266,8 @@ const App: React.FC = () => {
       const targetMonster = newEntities.find(e => e.type === Types.EntityType.MONSTER && e.health! > 0 && Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2) < 0.8);
       if (targetMonster) {
         const distToPlayer = Math.sqrt((targetMonster.x - player.x) ** 2 + (targetMonster.y - player.y) ** 2);
-        if (distToPlayer < 2.0) {
+        const hasLos = isLineOfSightClear(player.x, player.y, targetMonster.x, targetMonster.y, gameState.map);
+        if (distToPlayer < 2.0 && hasLos) {
           attackMade = true;
           setGameState(prev => {
             if (!prev) return null;
@@ -567,7 +568,7 @@ const App: React.FC = () => {
         // Damage Player Logic - CONTINUOUS CONTACT DAMAGE
         // Distance check: < 1.0 means "touching" or very close
         const distFinal = Math.sqrt((nextE.x - player.x) ** 2 + (nextE.y - player.y) ** 2);
-        if (distFinal < 1.0) {
+        if (distFinal < 1.0 && isLineOfSightClear(player.x, player.y, nextE.x, nextE.y, prev.map)) {
           player.health -= 40 * delta; // Increased damage rate for danger
           player.hitFlash = 0.5;
         }
