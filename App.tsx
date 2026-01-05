@@ -389,19 +389,58 @@ const App: React.FC = () => {
         const nextE = { ...e, data: nextData };
 
         if (nextE.data.state === 'IDLE') {
-          if (dP < 6.0) nextE.data.state = 'CHASING';
+          // PATROL LOGIC
+          if (!nextE.data.nextTarget || (Math.sqrt((nextE.x - nextE.data.nextTarget.x) ** 2 + (nextE.y - nextE.data.nextTarget.y) ** 2) < 0.2)) {
+            // Pick random point near spawn
+            if (time - (nextE.data.lastPathUpdate || 0) > 3000) { // Wait a bit before moving again
+              const rx = nextE.data.spawnX + (Math.random() - 0.5) * 6;
+              const ry = nextE.data.spawnY + (Math.random() - 0.5) * 6;
+              const step = getNextPathStep(nextE.x, nextE.y, rx, ry, prev.map);
+              if (step) {
+                nextE.data.nextTarget = { x: step[0] + 0.5, y: step[1] + 0.5 };
+                nextE.data.lastPathUpdate = time;
+              }
+            }
+          }
+
+          // DETECTION LOGIC
+          let detected = false;
+          // 1. Visual Detection (Line of Sight)
+          if (dP < 10.0 && isLineOfSightClear(player.x, player.y, nextE.x, nextE.y, prev.map)) {
+            detected = true;
+          }
+          // 2. Auditory Detection (Sprinting near monster)
+          if (!detected && dP < 6.0 && player.sprinting) {
+            detected = true;
+          }
+
+          if (detected) {
+            nextE.data.state = 'CHASING';
+            nextE.data.nextTarget = null; // Reset path to force immediate recalc
+          }
+
         } else if (nextE.data.state === 'CHASING') {
-          if (dP > 10.0) { nextE.data.state = 'RETURNING'; nextE.data.nextTarget = null; }
-          else {
-            if (time - nextE.data.lastPathUpdate > 500 || !nextE.data.nextTarget) {
+          if (dP > 12.0) { // Lost interest if too far
+            nextE.data.state = 'RETURNING';
+            nextE.data.nextTarget = null;
+          } else {
+            // Re-evaluate path to player frequently
+            if (time - nextE.data.lastPathUpdate > 250 || !nextE.data.nextTarget) {
               const step = getNextPathStep(nextE.x, nextE.y, player.x, player.y, prev.map);
               if (step) nextE.data.nextTarget = { x: step[0] + 0.5, y: step[1] + 0.5 };
               nextE.data.lastPathUpdate = time;
             }
           }
         } else if (nextE.data.state === 'RETURNING') {
-          if (dP < 4.5) nextE.data.state = 'CHASING';
-          else if (Math.sqrt((nextE.x - nextE.data.spawnX) ** 2 + (nextE.y - nextE.data.spawnY) ** 2) < 0.2) {
+          // Can re-detect during return
+          let detected = false;
+          if (dP < 10.0 && isLineOfSightClear(player.x, player.y, nextE.x, nextE.y, prev.map)) detected = true;
+          if (!detected && dP < 6.0 && player.sprinting) detected = true;
+
+          if (detected) {
+            nextE.data.state = 'CHASING';
+            nextE.data.nextTarget = null;
+          } else if (Math.sqrt((nextE.x - nextE.data.spawnX) ** 2 + (nextE.y - nextE.data.spawnY) ** 2) < 0.2) {
             nextE.data.state = 'IDLE'; nextE.data.nextTarget = null;
           } else {
             if (time - nextE.data.lastPathUpdate > 1000 || !nextE.data.nextTarget) {
@@ -412,9 +451,12 @@ const App: React.FC = () => {
           }
         }
 
-        if (nextE.data.nextTarget && nextE.data.hitFlash <= 0) { // Stun briefly when hit? Maybe not needed, but good for feel
+        if (nextE.data.nextTarget && nextE.data.hitFlash <= 0) {
           const ang = Math.atan2(nextE.data.nextTarget.y - nextE.y, nextE.data.nextTarget.x - nextE.x);
-          const ms = (nextE.data.state === 'CHASING' ? 2.2 : 1.5) * delta;
+          // Speed x2 when chasing (was 2.2, now 4.4?) or relative to base.
+          // Base walk speed ~1.5. Chase speed ~3.5
+          const speed = nextE.data.state === 'CHASING' ? 3.5 : 1.5;
+          const ms = speed * delta;
           nextE.x += Math.cos(ang) * ms;
           nextE.y += Math.sin(ang) * ms;
         }
