@@ -81,7 +81,8 @@ const App: React.FC = () => {
   const wallTopImgRef = useRef<HTMLImageElement | null>(null);
   const wallFaceImgRef = useRef<HTMLImageElement | null>(null);
   const floorImgRef = useRef<HTMLImageElement | null>(null);
-  const chestImgRef = useRef<HTMLImageElement | null>(null);
+  const chestClosedImgRef = useRef<HTMLImageElement | null>(null);
+  const chestOpenImgRef = useRef<HTMLImageElement | null>(null);
 
   const particlesRef = useRef<Particle[]>([]);
   const nextParticleIdRef = useRef(0);
@@ -104,7 +105,8 @@ const App: React.FC = () => {
     loadImg('/assets/wall_top.png', wallTopImgRef);
     loadImg('/assets/wall_face.png', wallFaceImgRef);
     loadImg('/assets/floor.png', floorImgRef);
-    loadImg('/assets/chest.png', chestImgRef);
+    loadImg('/assets/chest_closed.png', chestClosedImgRef);
+    loadImg('/assets/chest_open.png', chestOpenImgRef);
   }, [screen]);
 
   const initGame = useCallback((loadExisting = false) => {
@@ -351,25 +353,23 @@ const App: React.FC = () => {
       player.hydration -= (player.sprinting ? 0.15 : 0.07) * delta;
       if (player.hunger <= 0 || player.hydration <= 0) player.health -= 8 * delta;
 
-      const hasFl = player.inventory.find(i => i.id === player.equippedLeftId || i.id === player.equippedRightId)?.type === Types.ItemType.FLASHLIGHT;
+      // Fix: Check if ANY equipped item is a flashlight, not just the first found equipped item
+      const flItemIndex = player.inventory.findIndex(i => i.type === Types.ItemType.FLASHLIGHT && (i.id === player.equippedLeftId || i.id === player.equippedRightId));
+      const hasFl = flItemIndex !== -1;
+
       if (player.isFlashlightOn && hasFl) {
-        const itIndex = player.inventory.findIndex(i => i.type === Types.ItemType.FLASHLIGHT && (i.id === player.equippedLeftId || i.id === player.equippedRightId));
-        if (itIndex !== -1) {
-          const it = player.inventory[itIndex];
-          if (it.durability! > 0) {
-            it.durability! -= 0.5 * delta;
-            if (it.durability! <= 0) {
-              // Depleted
-              const id = it.id;
-              player.inventory.splice(itIndex, 1);
-              if (player.equippedLeftId === id) player.equippedLeftId = null;
-              if (player.equippedRightId === id) player.equippedRightId = null;
-              player.isFlashlightOn = false;
-              nextMessage = "BATTERY_DEPLETED";
-              nextMessageTimeout = 2.0;
-            }
-          } else {
+        const it = player.inventory[flItemIndex];
+        if (it.durability! > 0) {
+          it.durability! -= 0.5 * delta;
+          if (it.durability! <= 0) {
+            // Depleted
+            const id = it.id;
+            player.inventory.splice(flItemIndex, 1);
+            if (player.equippedLeftId === id) player.equippedLeftId = null;
+            if (player.equippedRightId === id) player.equippedRightId = null;
             player.isFlashlightOn = false;
+            nextMessage = "BATTERY_DEPLETED";
+            nextMessageTimeout = 2.0;
           }
         } else {
           player.isFlashlightOn = false;
@@ -570,8 +570,9 @@ const App: React.FC = () => {
         draw: () => {
           if (e.type === Types.EntityType.CHEST) {
             const size = 32;
-            if (chestImgRef.current) {
-              ctx.drawImage(chestImgRef.current, e.x * s - size / 2, e.y * s - size / 2 - 10, size, size);
+            const img = e.data.isOpen ? chestOpenImgRef.current : chestClosedImgRef.current;
+            if (img) {
+              ctx.drawImage(img, e.x * s - size / 2, e.y * s - size / 2 - 10, size, size);
             } else {
               ctx.fillStyle = e.data.isOpen ? '#3a2601' : '#a16207';
               ctx.fillRect(e.x * s - 14, e.y * s - 14, 28, 28);
