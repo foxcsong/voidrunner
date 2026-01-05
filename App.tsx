@@ -69,6 +69,7 @@ const App: React.FC = () => {
   const [screen, setScreen] = useState<Screen>('MENU');
   const [hasSave, setHasSave] = useState(false);
   const [gameState, setGameState] = useState<Types.GameState | null>(null);
+  const [showInventory, setShowInventory] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keysRef = useRef<Record<string, boolean>>({});
   const lastTimeRef = useRef<number>(performance.now());
@@ -90,6 +91,12 @@ const App: React.FC = () => {
   const damageNumbersRef = useRef<Types.DamageNumber[]>([]);
   const nextDamageNumberIdRef = useRef(0);
 
+  const touchStartRef = useRef<{ x: number, y: number, time: number } | null>(null);
+  const touchCurrentRef = useRef<{ x: number, y: number } | null>(null);
+  const isDraggingRef = useRef(false);
+  const lastTapTimeRef = useRef(0);
+  const [joystickVec, setJoystickVec] = useState<{ x: number, y: number } | null>(null);
+
   useEffect(() => {
     const save = localStorage.getItem(SAVE_KEY);
     setHasSave(!!save);
@@ -109,12 +116,42 @@ const App: React.FC = () => {
     loadImg('/assets/chest_open.png', chestOpenImgRef);
   }, [screen]);
 
+  // SMART LOOTING LOGIC
+  const autoEquip = (player: Types.Player, item: Types.InventoryItem): Types.Player => {
+    const p = { ...player };
+    // 1. Flashlight -> Prefer Left, then Pocket, then Right (if desperate)
+    if (item.type === Types.ItemType.FLASHLIGHT) {
+      const hasLightEquipped =
+        (p.equippedLeftId && p.inventory.find(i => i.id === p.equippedLeftId)?.type === Types.ItemType.FLASHLIGHT) ||
+        (p.equippedRightId && p.inventory.find(i => i.id === p.equippedRightId)?.type === Types.ItemType.FLASHLIGHT) ||
+        (p.equippedPocketId && p.inventory.find(i => i.id === p.equippedPocketId)?.type === Types.ItemType.FLASHLIGHT);
+
+      if (!hasLightEquipped) {
+        if (!p.equippedLeftId) p.equippedLeftId = item.id;
+        else if (!p.equippedPocketId) p.equippedPocketId = item.id;
+        else if (!p.equippedRightId) p.equippedRightId = item.id;
+      }
+    }
+    // 2. Weapon -> Prefer Right, then Pocket, then Left
+    else if (item.type === Types.ItemType.GUN || item.type === Types.ItemType.KNIFE) {
+      const hasWeaponEquipped =
+        (p.equippedRightId && [Types.ItemType.GUN, Types.ItemType.KNIFE].includes(p.inventory.find(i => i.id === p.equippedRightId)?.type as any)) ||
+        (p.equippedLeftId && [Types.ItemType.GUN, Types.ItemType.KNIFE].includes(p.inventory.find(i => i.id === p.equippedLeftId)?.type as any));
+
+      if (!hasWeaponEquipped) {
+        if (!p.equippedRightId) p.equippedRightId = item.id;
+        else if (!p.equippedPocketId) p.equippedPocketId = item.id;
+        else if (!p.equippedLeftId) p.equippedLeftId = item.id;
+      }
+    }
+    return p;
+  };
+
   const initGame = useCallback((loadExisting = false) => {
     if (loadExisting) {
       const saved = localStorage.getItem(SAVE_KEY);
       if (saved) {
         const state = JSON.parse(saved);
-        // Reset transient visual states
         state.entities.forEach((e: any) => {
           if (e.data) { e.data.hitFlash = 0; }
         });
@@ -156,7 +193,7 @@ const App: React.FC = () => {
     });
 
     setGameState({
-      player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [{ id: 'init-f', type: Types.ItemType.FLASHLIGHT, name: 'FLASHLIGHT', durability: 100 }], equippedLeftId: null, equippedRightId: null, sprinting: false },
+      player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [{ id: 'init-f', type: Types.ItemType.FLASHLIGHT, name: 'FLASHLIGHT', durability: 100 }], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false },
       map, entities, isGameOver: false, deathReason: '', message: 'SYSTEM_BOOT_COMPLETE', messageTimeout: 4, chaseActive: false, survivalTime: 0, isPaused: false, activeChestId: null, draggingItemId: null
     });
     setScreen('PLAYING');
@@ -178,22 +215,18 @@ const App: React.FC = () => {
     });
   };
 
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleInteraction = (clientX: number, clientY: number) => {
     if (!gameState || gameState.isPaused || gameState.isGameOver) return;
     const rect = canvasRef.current!.getBoundingClientRect();
     const s = Constants.CELL_SIZE;
     const ww = window.innerWidth, wh = window.innerHeight;
 
-    // Calculate world coordinates from screen click
-    // ScreenX = ww/2 + (worldX - playerX) * s
-    // worldX = (ScreenX - ww/2) / s + playerX
-    const clickX = (e.clientX - rect.left - ww / 2) / s + gameState.player.x;
-    const clickY = (e.clientY - rect.top - wh / 2) / s + gameState.player.y;
+    const clickX = (clientX - rect.left - ww / 2) / s + gameState.player.x;
+    const clickY = (clientY - rect.top - wh / 2) / s + gameState.player.y;
 
     // Determine active weapon
     const { player } = gameState;
     const weapons = [player.inventory.find(i => i?.id === player.equippedLeftId), player.inventory.find(i => i?.id === player.equippedRightId)].filter(Boolean);
-    // Prioritize Gun > Knife
     const gun = weapons.find(i => i?.type === Types.ItemType.GUN);
     const knife = weapons.find(i => i?.type === Types.ItemType.KNIFE);
 
@@ -206,19 +239,15 @@ const App: React.FC = () => {
       setGameState(prev => {
         if (!prev) return null;
         let nextInv = prev.player.inventory.map(i => i.id === gun.id ? { ...i, count: (i.count! - 1) } : i);
-
-        // Remove empty gun
         const updatedGun = nextInv.find(i => i.id === gun.id);
         if (updatedGun && updatedGun.count! <= 0) {
           nextInv = nextInv.filter(i => i.id !== gun.id);
           if (prev.player.equippedLeftId === gun.id) prev.player.equippedLeftId = null;
           if (prev.player.equippedRightId === gun.id) prev.player.equippedRightId = null;
         }
-
         return { ...prev, player: { ...prev.player, inventory: nextInv }, message: 'FIRING_SEQUENCE', messageTimeout: 0.5 };
       });
 
-      // Check hits logic
       newEntities = newEntities.map(e => {
         if (e.type === Types.EntityType.MONSTER && e.health! > 0) {
           const dist = Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2);
@@ -232,9 +261,7 @@ const App: React.FC = () => {
 
     } else if (knife && (knife.durability || 0) > 0) {
       // KNIFE ATTACK
-      // Knife requires clicking ON the monster AND being close
       const targetMonster = newEntities.find(e => e.type === Types.EntityType.MONSTER && e.health! > 0 && Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2) < 0.8);
-
       if (targetMonster) {
         const distToPlayer = Math.sqrt((targetMonster.x - player.x) ** 2 + (targetMonster.y - player.y) ** 2);
         if (distToPlayer < 2.0) {
@@ -242,15 +269,12 @@ const App: React.FC = () => {
           setGameState(prev => {
             if (!prev) return null;
             let nextInv = prev.player.inventory.map(i => i.id === knife.id ? { ...i, durability: (i.durability! - 2) } : i);
-
-            // Remove broken knife
             const updatedKnife = nextInv.find(i => i.id === knife.id);
             if (updatedKnife && updatedKnife.durability! <= 0) {
               nextInv = nextInv.filter(i => i.id !== knife.id);
               if (prev.player.equippedLeftId === knife.id) prev.player.equippedLeftId = null;
               if (prev.player.equippedRightId === knife.id) prev.player.equippedRightId = null;
             }
-
             return { ...prev, player: { ...prev.player, inventory: nextInv }, message: 'MELEE_ENGAGED', messageTimeout: 0.5 };
           });
 
@@ -261,12 +285,8 @@ const App: React.FC = () => {
             }
             return e;
           });
-        } else {
-          setGameState(prev => prev ? { ...prev, message: 'TARGET_OUT_OF_RANGE', messageTimeout: 1.0 } : null);
         }
       }
-    } else {
-      setGameState(prev => prev ? { ...prev, message: 'NO_WEAPON_READY', messageTimeout: 1.0 } : null);
     }
 
     if (attackMade) {
@@ -274,11 +294,56 @@ const App: React.FC = () => {
     }
   };
 
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Keep click logic for desktop testing, but mobile relies on touchEnd
+    handleInteraction(e.clientX, e.clientY);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY, time: performance.now() };
+    touchCurrentRef.current = { x: t.clientX, y: t.clientY };
+    isDraggingRef.current = false;
+
+    // Double tap check
+    if (performance.now() - lastTapTimeRef.current < 300) {
+      setGameState(prev => prev ? { ...prev, player: { ...prev.player, sprinting: true } } : null);
+    } else {
+      setGameState(prev => prev ? { ...prev, player: { ...prev.player, sprinting: false } } : null);
+    }
+    lastTapTimeRef.current = performance.now();
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return;
+    const t = e.touches[0];
+    touchCurrentRef.current = { x: t.clientX, y: t.clientY };
+    const dist = Math.sqrt((t.clientX - touchStartRef.current.x) ** 2 + (t.clientY - touchStartRef.current.y) ** 2);
+    if (dist > 10) {
+      isDraggingRef.current = true;
+      // Calc vector
+      const dx = t.clientX - touchStartRef.current.x;
+      const dy = t.clientY - touchStartRef.current.y;
+      setJoystickVec({ x: dx, y: dy });
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!isDraggingRef.current && touchStartRef.current) {
+      // It was a tap
+      handleInteraction(touchStartRef.current.x, touchStartRef.current.y);
+    }
+    touchStartRef.current = null;
+    touchCurrentRef.current = null;
+    isDraggingRef.current = false;
+    setJoystickVec(null);
+    setGameState(prev => prev ? { ...prev, player: { ...prev.player, sprinting: false } } : null); // Stop sprint on release
+  };
+
   const gameLoop = useCallback((time: number) => {
     const delta = Math.min((time - lastTimeRef.current) / 1000, 0.05);
     lastTimeRef.current = time;
 
-    // Update Particles
     particlesRef.current = particlesRef.current
       .map(p => ({
         ...p,
@@ -288,7 +353,6 @@ const App: React.FC = () => {
       }))
       .filter(p => p.life > 0);
 
-    // Update Damage Numbers
     damageNumbersRef.current = damageNumbersRef.current
       .map(dn => ({ ...dn, y: dn.y - 0.5 * delta, life: dn.life - delta }))
       .filter(dn => dn.life > 0);
@@ -301,18 +365,30 @@ const App: React.FC = () => {
       let nextMessage = nextMessageTimeout <= 0 ? '' : prev.message;
 
       const player = { ...prev.player };
-      player.sprinting = !!keysRef.current['ShiftLeft'] && player.hydration > 10;
+      // Sprinting controlled by state now (double tap) or shift key as fallback
+      // BUT we also check hydration here
+      if (player.hydration <= 10) player.sprinting = false;
+
       const speed = (player.sprinting ? 6.2 : 3.8) * delta;
 
       let dx = 0, dy = 0;
+      // KEYBOARD
       if (keysRef.current['KeyW'] || keysRef.current['ArrowUp']) dy -= speed;
       if (keysRef.current['KeyS'] || keysRef.current['ArrowDown']) dy += speed;
       if (keysRef.current['KeyA'] || keysRef.current['ArrowLeft']) dx -= speed;
       if (keysRef.current['KeyD'] || keysRef.current['ArrowRight']) dx += speed;
+
+      // TOUCH JOYSTICK
+      if (joystickVec) {
+        const angle = Math.atan2(joystickVec.y, joystickVec.x);
+        // Normalize speed, maybe clamp joystick magnitude?
+        // Simplest is just always move max speed in that direction if dragging
+        dx = Math.cos(angle) * speed;
+        dy = Math.sin(angle) * speed;
+      }
+
       if (dx !== 0 || dy !== 0) {
         player.dir = Math.atan2(dy, dx);
-
-        // Emit Particles
         if (Math.random() > 0.7) {
           particlesRef.current.push({
             id: nextParticleIdRef.current++,
@@ -353,8 +429,7 @@ const App: React.FC = () => {
       player.hydration -= (player.sprinting ? 0.15 : 0.07) * delta;
       if (player.hunger <= 0 || player.hydration <= 0) player.health -= 8 * delta;
 
-      // Fix: Check if ANY equipped item is a flashlight, not just the first found equipped item
-      const flItemIndex = player.inventory.findIndex(i => i.type === Types.ItemType.FLASHLIGHT && (i.id === player.equippedLeftId || i.id === player.equippedRightId));
+      const flItemIndex = player.inventory.findIndex(i => i.type === Types.ItemType.FLASHLIGHT && (i.id === player.equippedLeftId || i.id === player.equippedRightId || i.id === player.equippedPocketId));
       const hasFl = flItemIndex !== -1;
 
       if (player.isFlashlightOn && hasFl) {
@@ -362,11 +437,11 @@ const App: React.FC = () => {
         if (it.durability! > 0) {
           it.durability! -= 0.5 * delta;
           if (it.durability! <= 0) {
-            // Depleted
             const id = it.id;
             player.inventory.splice(flItemIndex, 1);
             if (player.equippedLeftId === id) player.equippedLeftId = null;
             if (player.equippedRightId === id) player.equippedRightId = null;
+            if (player.equippedPocketId === id) player.equippedPocketId = null;
             player.isFlashlightOn = false;
             nextMessage = "BATTERY_DEPLETED";
             nextMessageTimeout = 2.0;
@@ -846,7 +921,14 @@ const App: React.FC = () => {
 
   return (
     <div className="relative w-screen h-screen bg-black text-zinc-200 font-mono overflow-hidden select-none">
-      <canvas ref={canvasRef} onClick={handleCanvasClick} className="absolute inset-0 block w-full h-full cursor-crosshair" />
+      <canvas
+        ref={canvasRef}
+        onClick={handleCanvasClick}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className="absolute inset-0 block w-full h-full cursor-crosshair touch-none"
+      />
 
       {/* --- TOP BAR --- */}
       <div className="absolute top-0 left-0 w-full p-4 pt-12 flex items-center justify-between pointer-events-none z-10 bg-gradient-to-b from-black/90 to-transparent">
@@ -969,7 +1051,26 @@ const App: React.FC = () => {
       {gameState.activeChestId && (
         <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-center justify-center pointer-events-auto p-4">
           <div className="bg-zinc-900 border border-yellow-700/50 p-6 rounded-3xl w-full max-w-sm shadow-2xl flex flex-col max-h-[70vh]">
-            <h2 className="text-yellow-500 font-bold uppercase tracking-widest mb-6 text-center text-lg">Chest Content</h2>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-yellow-500 font-bold uppercase tracking-widest text-lg">Chest Content</h2>
+              <button className="text-[10px] items-center justify-center bg-yellow-900/20 text-yellow-500 border border-yellow-700/50 px-3 py-1 rounded-full uppercase font-bold tracking-wider active:scale-95" onClick={() => {
+                // LOOT ALL
+                setGameState(s => {
+                  if (!s) return null;
+                  const chest = s.entities.find(e => e.id === s.activeChestId);
+                  if (!chest) return s;
+                  let p = { ...s.player };
+
+                  chest.data.items.forEach((item: any) => {
+                    p.inventory.push(item);
+                    p = autoEquip(p, item);
+                  });
+                  chest.data.items = [];
+                  return { ...s, player: p, activeChestId: null };
+                });
+              }}>Loot All</button>
+            </div>
+
             <div className="grid grid-cols-4 gap-3 mb-4 overflow-y-auto p-2">
               {gameState.entities.find(e => e.id === gameState.activeChestId)?.data.items.map((it: any) => (
                 <button key={it.id} onClick={() => {
@@ -982,8 +1083,10 @@ const App: React.FC = () => {
                     if (!item) return s;
 
                     // Add to player
-                    const p = { ...s.player };
+                    let p = { ...s.player };
                     p.inventory.push(item);
+                    p = autoEquip(p, item);
+
                     chest.data.items = chest.data.items.filter((i: any) => i.id !== it.id);
 
                     return { ...s, player: p };
