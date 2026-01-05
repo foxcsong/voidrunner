@@ -203,7 +203,16 @@ const App: React.FC = () => {
       attackMade = true;
       setGameState(prev => {
         if (!prev) return null;
-        const nextInv = prev.player.inventory.map(i => i.id === gun.id ? { ...i, count: (i.count! - 1) } : i);
+        let nextInv = prev.player.inventory.map(i => i.id === gun.id ? { ...i, count: (i.count! - 1) } : i);
+
+        // Remove empty gun
+        const updatedGun = nextInv.find(i => i.id === gun.id);
+        if (updatedGun && updatedGun.count! <= 0) {
+          nextInv = nextInv.filter(i => i.id !== gun.id);
+          if (prev.player.equippedLeftId === gun.id) prev.player.equippedLeftId = null;
+          if (prev.player.equippedRightId === gun.id) prev.player.equippedRightId = null;
+        }
+
         return { ...prev, player: { ...prev.player, inventory: nextInv }, message: 'FIRING_SEQUENCE', messageTimeout: 0.5 };
       });
 
@@ -230,7 +239,16 @@ const App: React.FC = () => {
           attackMade = true;
           setGameState(prev => {
             if (!prev) return null;
-            const nextInv = prev.player.inventory.map(i => i.id === knife.id ? { ...i, durability: (i.durability! - 2) } : i);
+            let nextInv = prev.player.inventory.map(i => i.id === knife.id ? { ...i, durability: (i.durability! - 2) } : i);
+
+            // Remove broken knife
+            const updatedKnife = nextInv.find(i => i.id === knife.id);
+            if (updatedKnife && updatedKnife.durability! <= 0) {
+              nextInv = nextInv.filter(i => i.id !== knife.id);
+              if (prev.player.equippedLeftId === knife.id) prev.player.equippedLeftId = null;
+              if (prev.player.equippedRightId === knife.id) prev.player.equippedRightId = null;
+            }
+
             return { ...prev, player: { ...prev.player, inventory: nextInv }, message: 'MELEE_ENGAGED', messageTimeout: 0.5 };
           });
 
@@ -335,9 +353,27 @@ const App: React.FC = () => {
 
       const hasFl = player.inventory.find(i => i.id === player.equippedLeftId || i.id === player.equippedRightId)?.type === Types.ItemType.FLASHLIGHT;
       if (player.isFlashlightOn && hasFl) {
-        const it = player.inventory.find(i => i.type === Types.ItemType.FLASHLIGHT && (i.id === player.equippedLeftId || i.id === player.equippedRightId));
-        if (it && it.durability! > 0) it.durability! -= 0.5 * delta;
-        else player.isFlashlightOn = false;
+        const itIndex = player.inventory.findIndex(i => i.type === Types.ItemType.FLASHLIGHT && (i.id === player.equippedLeftId || i.id === player.equippedRightId));
+        if (itIndex !== -1) {
+          const it = player.inventory[itIndex];
+          if (it.durability! > 0) {
+            it.durability! -= 0.5 * delta;
+            if (it.durability! <= 0) {
+              // Depleted
+              const id = it.id;
+              player.inventory.splice(itIndex, 1);
+              if (player.equippedLeftId === id) player.equippedLeftId = null;
+              if (player.equippedRightId === id) player.equippedRightId = null;
+              player.isFlashlightOn = false;
+              nextMessage = "BATTERY_DEPLETED";
+              nextMessageTimeout = 2.0;
+            }
+          } else {
+            player.isFlashlightOn = false;
+          }
+        } else {
+          player.isFlashlightOn = false;
+        }
       } else {
         player.isFlashlightOn = false;
       }
