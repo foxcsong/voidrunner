@@ -251,7 +251,9 @@ const App: React.FC = () => {
       newEntities = newEntities.map(e => {
         if (e.type === Types.EntityType.MONSTER && e.health! > 0) {
           const dist = Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2);
-          if (dist < 0.8 && isLineOfSightClear(player.x, player.y, e.x, e.y, gameState.map)) {
+          // Allow hit if very close OR if LOS is clear
+          const hasLos = isLineOfSightClear(player.x, player.y, e.x, e.y, gameState.map);
+          if (dist < 0.8 && (dist < 1.5 || hasLos)) {
             spawnDamageNumber(e.x, e.y - 0.5, 40, '#fbbf24');
             return { ...e, health: e.health! - 40, data: { ...e.data, hitFlash: 0.2, state: 'CHASING' } };
           }
@@ -493,7 +495,10 @@ const App: React.FC = () => {
           // DETECTION LOGIC
           let detected = false;
           // 1. Visual Detection (Line of Sight)
-          if (dP < 10.0 && isLineOfSightClear(player.x, player.y, nextE.x, nextE.y, prev.map)) {
+          // Relax LOS if very close (1.5m), essentially "hearing/smelling" range or just proximity
+          if (dP < 1.5) {
+            detected = true;
+          } else if (dP < 10.0 && isLineOfSightClear(player.x, player.y, nextE.x, nextE.y, prev.map)) {
             detected = true;
           }
           // 2. Auditory Detection (Sprinting near monster)
@@ -1011,11 +1016,41 @@ const App: React.FC = () => {
                 {item.count !== undefined && <div className="absolute top-1 right-1 text-[8px] bg-zinc-700 px-1 rounded text-white">{item.count}</div>}
 
                 {/* Equip Overlay */}
-                <div className="absolute inset-0 bg-black/90 flex flex-col justify-center items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity p-1">
-                  <button onClick={() => handleEquip(item.id, 'left')} className="text-[8px] px-1 py-1 bg-zinc-700 rounded w-full hover:bg-zinc-600 text-white font-bold">LEFT</button>
-                  <button onClick={() => handleEquip(item.id, 'pocket')} className="text-[8px] px-1 py-1 bg-zinc-700 rounded w-full hover:bg-zinc-600 text-white font-bold">POCKET</button>
-                  <button onClick={() => handleEquip(item.id, 'right')} className="text-[8px] px-1 py-1 bg-zinc-700 rounded w-full hover:bg-zinc-600 text-white font-bold">RIGHT</button>
-                </div>
+                <div onClick={() => {
+                  setGameState(prev => {
+                    if (!prev) return null;
+                    const p = autoEquip(prev.player, item);
+                    // If autoEquip didn't assign (full slots), maybe swap active?
+                    // For now, autoEquip is smart enough for empty slots.
+                    // If strict swap needed:
+                    // if item is FLASHLIGHT -> force to left
+                    // if item is WEAPON -> force to right
+                    // but user asked for "default into...", which autoEquip does.
+                    // Let's force it if autoEquip fails or just use a specialized equip logic here.
+
+                    // Force Logic per user request:
+                    if (item.type === Types.ItemType.FLASHLIGHT) {
+                      p.equippedLeftId = item.id;
+                      if (p.equippedPocketId === item.id) p.equippedPocketId = null;
+                      if (p.equippedRightId === item.id) p.equippedRightId = null;
+                    }
+                    else if (item.type === Types.ItemType.GUN || item.type === Types.ItemType.KNIFE) {
+                      p.equippedRightId = item.id;
+                      if (p.equippedPocketId === item.id) p.equippedPocketId = null;
+                      if (p.equippedLeftId === item.id) p.equippedLeftId = null;
+                    }
+                    else if (item.type === Types.ItemType.FOOD || item.type === Types.ItemType.WATER) {
+                      p.equippedPocketId = item.id;
+                      if (p.equippedLeftId === item.id) p.equippedLeftId = null;
+                      if (p.equippedRightId === item.id) p.equippedRightId = null;
+                    }
+
+                    return { ...prev, player: p };
+                  });
+                  setShowInventory(false);
+                }} className="absolute inset-0 bg-transparent z-10 cursor-pointer active:bg-white/10" />
+
+                {/* REMOVED OLD EQUIP BUTTONS */}
               </div>
             ))}
           </div>
@@ -1045,7 +1080,16 @@ const App: React.FC = () => {
           {eL ? (
             <>
               <div className="text-4xl pb-2">{ITEM_ICONS[eL.type]}</div>
-              <div className="absolute bottom-2 text-[9px] text-zinc-400 font-bold bg-zinc-950/50 px-2 rounded">{eL.name}</div>
+              <div className="absolute bottom-2 left-0 w-full flex justify-center">
+                <div className="text-[9px] text-zinc-400 font-bold bg-zinc-950/50 px-2 rounded mb-1">{eL.name}</div>
+              </div>
+              {/* DURABILITY/AMMO DISPLAY */}
+              {eL.durability !== undefined && (
+                <div className="absolute top-2 right-2 text-[8px] font-mono text-cyan-400">{Math.ceil(eL.durability)}%</div>
+              )}
+              {eL.count !== undefined && (
+                <div className="absolute top-2 right-2 text-[8px] font-mono text-yellow-400">x{eL.count}</div>
+              )}
             </>
           ) : <div className="text-zinc-700 text-2xl">✋</div>}
         </button>
@@ -1056,8 +1100,14 @@ const App: React.FC = () => {
           {eP ? (
             <>
               <div className="text-4xl pb-2">{ITEM_ICONS[eP.type]}</div>
-              <div className="absolute bottom-2 text-[9px] text-zinc-400 font-bold bg-zinc-950/50 px-2 rounded">{eP.name}</div>
+              <div className="absolute bottom-2 left-0 w-full flex justify-center">
+                <div className="text-[9px] text-zinc-400 font-bold bg-zinc-950/50 px-2 rounded mb-1">{eP.name}</div>
+              </div>
               {eP.type === Types.ItemType.FLASHLIGHT && player.isFlashlightOn && <div className="absolute inset-0 bg-yellow-500/10 animate-pulse pointer-events-none rounded-[1.5rem] border border-yellow-500/30" />}
+              {/* DURABILITY/AMMO DISPLAY */}
+              {eP.count !== undefined && (
+                <div className="absolute top-2 right-2 text-[8px] font-mono text-yellow-400">x{eP.count}</div>
+              )}
             </>
           ) : <div className="text-zinc-700 text-2xl">🎒</div>}
         </button>
@@ -1068,7 +1118,16 @@ const App: React.FC = () => {
           {eR ? (
             <>
               <div className="text-4xl pb-2">{ITEM_ICONS[eR.type]}</div>
-              <div className="absolute bottom-2 text-[9px] text-red-400 font-bold bg-black/40 px-2 rounded border border-red-900/30">{eR.name}</div>
+              <div className="absolute bottom-2 left-0 w-full flex justify-center">
+                <div className="text-[9px] text-red-400 font-bold bg-black/40 px-2 rounded border border-red-900/30 mb-1">{eR.name}</div>
+              </div>
+              {/* DURABILITY/AMMO DISPLAY */}
+              {eR.durability !== undefined && (
+                <div className="absolute top-2 right-2 text-[8px] font-mono text-cyan-400">{Math.ceil(eR.durability)}%</div>
+              )}
+              {eR.count !== undefined && (
+                <div className="absolute top-2 right-2 text-[8px] font-mono text-yellow-400">x{eR.count}</div>
+              )}
             </>
           ) : <div className="text-zinc-700 text-2xl">⚔️</div>}
         </button>
