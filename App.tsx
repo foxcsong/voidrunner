@@ -438,10 +438,13 @@ const App: React.FC = () => {
       else if (!isMoving) rateMultiplier = 0.2;
 
       // Need higher base rates for visibility
-      player.hunger -= 0.15 * delta * rateMultiplier;
-      player.hydration -= 0.25 * delta * rateMultiplier;
+      // Base: Walk. Idle is 0.2x, Run is 2.0x.
+      // 0.5/s means 200s (3min) to starve walking.
+      // Idle: 0.1/s (1000s). Run: 1.0/s (100s).
+      player.hunger -= 0.5 * delta * rateMultiplier;
+      player.hydration -= 0.8 * delta * rateMultiplier;
 
-      if (player.hunger <= 0 || player.hydration <= 0) player.health -= 5 * delta;
+      if (player.hunger <= 0 || player.hydration <= 0) player.health -= 15 * delta;
 
       const flItemIndex = player.inventory.findIndex(i => i.type === Types.ItemType.FLASHLIGHT && (i.id === player.equippedLeftId || i.id === player.equippedRightId || i.id === player.equippedPocketId));
       const hasFl = flItemIndex !== -1;
@@ -545,20 +548,26 @@ const App: React.FC = () => {
 
         if (nextE.data.nextTarget && nextE.data.hitFlash <= 0) {
           const ang = Math.atan2(nextE.data.nextTarget.y - nextE.y, nextE.data.nextTarget.x - nextE.x);
-          // Speed x2 when chasing (was 2.2, now 4.4?) or relative to base.
-          // Base walk speed ~1.5. Chase speed ~3.5
-          // Speed x2 when chasing (was 2.2, now 4.4?) or relative to base.
-          // Base walk speed ~1.5. Chase speed ~3.5
           const speed = nextE.data.state === 'CHASING' ? 3.5 : 1.5;
           const ms = speed * delta;
-          nextE.x += Math.cos(ang) * ms;
-          nextE.y += Math.sin(ang) * ms;
+
+          // Simple collision check for monster vs player (prevents clipping)
+          const nextMx = nextE.x + Math.cos(ang) * ms;
+          const nextMy = nextE.y + Math.sin(ang) * ms;
+          const distToPlayer = Math.sqrt((nextMx - player.x) ** 2 + (nextMy - player.y) ** 2);
+
+          if (distToPlayer > 0.8) { // Only move if not touching player (0.8 buffer)
+            nextE.x = nextMx;
+            nextE.y = nextMy;
+          }
         }
 
-        // Damage Player Logic
-        if (dP < 0.6) {
-          player.health -= 30 * delta;
-          player.hitFlash = 0.5; // Trigger flash
+        // Damage Player Logic - CONTINUOUS CONTACT DAMAGE
+        // Distance check: < 1.0 means "touching" or very close
+        const distFinal = Math.sqrt((nextE.x - player.x) ** 2 + (nextE.y - player.y) ** 2);
+        if (distFinal < 1.0) {
+          player.health -= 40 * delta; // Increased damage rate for danger
+          player.hitFlash = 0.5;
         }
         return nextE;
       });
