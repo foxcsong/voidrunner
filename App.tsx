@@ -95,7 +95,8 @@ const App: React.FC = () => {
   const touchCurrentRef = useRef<{ x: number, y: number } | null>(null);
   const isDraggingRef = useRef(false);
   const lastTapTimeRef = useRef(0);
-  const [joystickVec, setJoystickVec] = useState<{ x: number, y: number } | null>(null);
+  const joystickVecRef = useRef<{ x: number, y: number } | null>(null);
+  const isTouchSprintingRef = useRef(false);
 
   useEffect(() => {
     const save = localStorage.getItem(SAVE_KEY);
@@ -300,6 +301,7 @@ const App: React.FC = () => {
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    // e.preventDefault(); // Sometimes creates issues with click passthrough, but safer for moves.
     const t = e.touches[0];
     touchStartRef.current = { x: t.clientX, y: t.clientY, time: performance.now() };
     touchCurrentRef.current = { x: t.clientX, y: t.clientY };
@@ -307,14 +309,16 @@ const App: React.FC = () => {
 
     // Double tap check
     if (performance.now() - lastTapTimeRef.current < 300) {
-      setGameState(prev => prev ? { ...prev, player: { ...prev.player, sprinting: true } } : null);
+      isTouchSprintingRef.current = true;
     } else {
-      setGameState(prev => prev ? { ...prev, player: { ...prev.player, sprinting: false } } : null);
+      isTouchSprintingRef.current = false;
     }
     lastTapTimeRef.current = performance.now();
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    // Prevent scrolling
+    // e.preventDefault(); 
     if (!touchStartRef.current) return;
     const t = e.touches[0];
     touchCurrentRef.current = { x: t.clientX, y: t.clientY };
@@ -324,7 +328,7 @@ const App: React.FC = () => {
       // Calc vector
       const dx = t.clientX - touchStartRef.current.x;
       const dy = t.clientY - touchStartRef.current.y;
-      setJoystickVec({ x: dx, y: dy });
+      joystickVecRef.current = { x: dx, y: dy };
     }
   };
 
@@ -336,8 +340,8 @@ const App: React.FC = () => {
     touchStartRef.current = null;
     touchCurrentRef.current = null;
     isDraggingRef.current = false;
-    setJoystickVec(null);
-    setGameState(prev => prev ? { ...prev, player: { ...prev.player, sprinting: false } } : null); // Stop sprint on release
+    joystickVecRef.current = null;
+    isTouchSprintingRef.current = false;
   };
 
   const gameLoop = useCallback((time: number) => {
@@ -365,9 +369,8 @@ const App: React.FC = () => {
       let nextMessage = nextMessageTimeout <= 0 ? '' : prev.message;
 
       const player = { ...prev.player };
-      // Sprinting controlled by state now (double tap) or shift key as fallback
-      // BUT we also check hydration here
-      if (player.hydration <= 10) player.sprinting = false;
+      // Sprinting controlled by proper logic combining Shift key and Touch Double Tap
+      player.sprinting = (!!keysRef.current['ShiftLeft'] || isTouchSprintingRef.current) && player.hydration > 10;
 
       const speed = (player.sprinting ? 6.2 : 3.8) * delta;
 
@@ -379,10 +382,10 @@ const App: React.FC = () => {
       if (keysRef.current['KeyD'] || keysRef.current['ArrowRight']) dx += speed;
 
       // TOUCH JOYSTICK
-      if (joystickVec) {
-        const angle = Math.atan2(joystickVec.y, joystickVec.x);
-        // Normalize speed, maybe clamp joystick magnitude?
-        // Simplest is just always move max speed in that direction if dragging
+      if (joystickVecRef.current) {
+        const vec = joystickVecRef.current;
+        const angle = Math.atan2(vec.y, vec.x);
+        // Normalize speed
         dx = Math.cos(angle) * speed;
         dy = Math.sin(angle) * speed;
       }
