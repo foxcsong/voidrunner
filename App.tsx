@@ -795,103 +795,224 @@ const App: React.FC = () => {
   const { player } = gameState;
   const eL = player.inventory.find(i => i.id === player.equippedLeftId);
   const eR = player.inventory.find(i => i.id === player.equippedRightId);
-  const activeChest = gameState.entities.find(e => e.id === gameState.activeChestId);
+  const eP = player.inventory.find(i => i.id === player.equippedPocketId);
+
+  // Helper to handle item actions from the bar
+  const handleSlotAction = (item: Types.InventoryItem | undefined, slot: 'left' | 'right' | 'pocket') => {
+    if (!item) return;
+    if (item.type === Types.ItemType.FLASHLIGHT) {
+      setGameState(prev => {
+        if (!prev) return null;
+        return { ...prev, player: { ...prev.player, isFlashlightOn: !prev.player.isFlashlightOn } };
+      });
+    } else if (item.type === Types.ItemType.FOOD || item.type === Types.ItemType.WATER) {
+      setGameState(prev => {
+        if (!prev) return null;
+        const p = { ...prev.player };
+        if (item.type === Types.ItemType.FOOD) p.hunger = Math.min(100, p.hunger + 35);
+        if (item.type === Types.ItemType.WATER) p.hydration = Math.min(100, p.hydration + 35);
+
+        let nextInv = p.inventory.map(i => i.id === item.id ? { ...i, count: (i.count || 1) - 1 } : i);
+        const updated = nextInv.find(i => i.id === item.id);
+        if (updated && updated.count! <= 0) {
+          nextInv = nextInv.filter(i => i.id !== item.id);
+          if (p.equippedLeftId === item.id) p.equippedLeftId = null;
+          if (p.equippedRightId === item.id) p.equippedRightId = null;
+          if (p.equippedPocketId === item.id) p.equippedPocketId = null;
+        }
+        return { ...prev, player: { ...p, inventory: nextInv } };
+      });
+    } else if (item.type === Types.ItemType.GUN) {
+      setGameState(prev => prev ? { ...prev, message: 'WEAPON_READY', messageTimeout: 0.5 } : null);
+    }
+  };
+
+  const handleEquip = (itemId: string, slot: 'left' | 'right' | 'pocket') => {
+    setGameState(prev => {
+      if (!prev) return null;
+      const p = { ...prev.player };
+      if (p.equippedLeftId === itemId && slot !== 'left') p.equippedLeftId = null;
+      if (p.equippedRightId === itemId && slot !== 'right') p.equippedRightId = null;
+      if (p.equippedPocketId === itemId && slot !== 'pocket') p.equippedPocketId = null;
+
+      if (slot === 'left') p.equippedLeftId = itemId;
+      if (slot === 'right') p.equippedRightId = itemId;
+      if (slot === 'pocket') p.equippedPocketId = itemId;
+
+      return { ...prev, player: p };
+    });
+    setShowInventory(false);
+  };
 
   return (
-    <div className="relative w-screen h-screen bg-black text-zinc-200 font-mono overflow-hidden select-none" onMouseUp={() => onDrop('inv')}>
+    <div className="relative w-screen h-screen bg-black text-zinc-200 font-mono overflow-hidden select-none">
       <canvas ref={canvasRef} onClick={handleCanvasClick} className="absolute inset-0 block w-full h-full cursor-crosshair" />
 
-      {/* STATS PANEL */}
-      <div className="absolute top-8 left-8 p-6 bg-zinc-950/80 backdrop-blur-2xl border border-zinc-800 rounded-3xl w-72 pointer-events-auto">
-        <h2 className="text-[10px] tracking-widest uppercase border-b border-zinc-900 pb-3 mb-5 font-black text-zinc-600">MISSION_MONITOR</h2>
-        <div className="space-y-5 text-[10px]">
-          {[['VITAL', player.health, '#dc2626'], ['ENERGY', player.hunger, '#16a34a'], ['FLUID', player.hydration, '#2563eb']].map(([label, val, color]) => (
-            <div key={label as string} className="space-y-1">
-              <div className="flex justify-between font-black uppercase tracking-tighter"><span>{label as string}</span><span>{Math.ceil(val as number)}%</span></div>
-              <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden border border-white/5"><div className="h-full transition-all" style={{ width: `${Math.max(0, val as number)}%`, backgroundColor: color as string }} /></div>
-            </div>
-          ))}
+      {/* --- TOP BAR --- */}
+      <div className="absolute top-0 left-0 w-full p-4 pt-12 flex items-center justify-between pointer-events-none z-10 bg-gradient-to-b from-black/90 to-transparent">
+        <div className="flex gap-3 flex-1 items-center px-2">
+
+          {/* HP */}
+          <div className="text-red-600 text-[12px] w-4 text-center">♥</div>
+          <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
+            <div className="absolute top-0 left-0 h-full bg-red-600 transition-all duration-300" style={{ width: `${Math.max(0, player.health)}%` }}></div>
+          </div>
+
+          {/* ENERGY */}
+          <div className="text-yellow-500 text-[12px] w-4 text-center">⚡</div>
+          <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
+            <div className="absolute top-0 left-0 h-full bg-green-500 transition-all duration-300" style={{ width: `${Math.max(0, player.hunger)}%` }}></div>
+          </div>
+
+          {/* WATER */}
+          <div className="text-blue-500 text-[12px] w-4 text-center">💧</div>
+          <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
+            <div className="absolute top-0 left-0 h-full bg-blue-500 transition-all duration-300" style={{ width: `${Math.max(0, player.hydration)}%` }}></div>
+          </div>
+
         </div>
-        <div className="mt-8 pt-4 border-t border-zinc-900 flex flex-col gap-3">
-          <button onClick={() => setGameState(s => s ? { ...s, isPaused: !s.isPaused } : null)} className={`py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${gameState.isPaused ? 'bg-zinc-100 text-black' : 'bg-zinc-900 hover:bg-zinc-800'}`}>
-            {gameState.isPaused ? 'Resume' : 'Pause'}
-          </button>
-          <button onClick={saveAndExit} className="py-2 bg-blue-900/20 text-blue-400 border border-blue-900/30 text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-blue-600 hover:text-white transition-all">
-            Save & Exit
-          </button>
-        </div>
+
+        {/* Menu Button */}
+        <button
+          onClick={() => setShowInventory(true)}
+          className="pointer-events-auto ml-3 p-3 bg-zinc-800/80 border border-zinc-600 rounded-lg text-white active:scale-95 transition-transform"
+        >
+          <div className="space-y-1">
+            <div className="w-5 h-0.5 bg-white"></div>
+            <div className="w-5 h-0.5 bg-white"></div>
+            <div className="w-5 h-0.5 bg-white"></div>
+          </div>
+        </button>
       </div>
 
-      {/* INVENTORY PANEL */}
-      <div className="absolute top-8 right-8 p-6 bg-zinc-950/80 backdrop-blur-2xl border border-zinc-800 rounded-3xl w-72 pointer-events-auto flex flex-col max-h-[60vh]">
-        <h2 className="text-[10px] tracking-widest uppercase border-b border-zinc-900 pb-3 mb-5 font-black text-zinc-600">CARGO_UNIT</h2>
-        <div className="flex-1 space-y-3 overflow-y-auto pr-2 custom-scrollbar">
-          {player.inventory.map(it => (
-            <div key={it.id} onMouseDown={(e) => { e.stopPropagation(); onDragStart(it.id); }} className={`p-4 bg-zinc-900/40 border border-zinc-800 rounded-2xl flex items-center gap-4 transition-all ${player.equippedLeftId === it.id || player.equippedRightId === it.id ? 'opacity-20' : 'cursor-grab hover:border-zinc-400'}`}>
-              <span className="text-3xl">{ITEM_ICONS[it.type]}</span>
-              <div className="text-[10px] font-black uppercase text-zinc-400">{it.name} {it.count ? `(${it.count})` : ''}</div>
-            </div>
-          ))}
-        </div>
-      </div>
+      {/* --- INVENTORY OVERLAY --- */}
+      {showInventory && (
+        <div className="absolute inset-0 z-50 bg-black/95 flex flex-col p-6 pt-16 animate-fade-in pointer-events-auto">
+          <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
+            <h2 className="text-xl font-bold tracking-widest text-zinc-400">INVENTORY</h2>
+            <button onClick={() => setShowInventory(false)} className="px-4 py-2 border border-zinc-600 rounded text-zinc-400">CLOSE</button>
+          </div>
 
-      {/* CHAT/MESSAGE BOX */}
+          <div className="grid grid-cols-4 gap-4 overflow-y-auto content-start pb-20">
+            {player.inventory.map(item => (
+              <div key={item.id} className="aspect-square bg-zinc-800/50 border border-zinc-700 rounded-xl p-1 flex flex-col items-center justify-between relative group">
+                <div className="text-2xl mt-1">{ITEM_ICONS[item.type]}</div>
+                <div className="text-[9px] text-zinc-500 truncate w-full text-center">{item.name}</div>
+                {item.count !== undefined && <div className="absolute top-1 right-1 text-[8px] bg-zinc-700 px-1 rounded text-white">{item.count}</div>}
+
+                {/* Equip Overlay */}
+                <div className="absolute inset-0 bg-black/90 flex flex-col justify-center items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity p-1">
+                  <button onClick={() => handleEquip(item.id, 'left')} className="text-[8px] px-1 py-1 bg-zinc-700 rounded w-full hover:bg-zinc-600 text-white font-bold">LEFT</button>
+                  <button onClick={() => handleEquip(item.id, 'pocket')} className="text-[8px] px-1 py-1 bg-zinc-700 rounded w-full hover:bg-zinc-600 text-white font-bold">POCKET</button>
+                  <button onClick={() => handleEquip(item.id, 'right')} className="text-[8px] px-1 py-1 bg-zinc-700 rounded w-full hover:bg-zinc-600 text-white font-bold">RIGHT</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-auto border-t border-zinc-800 pt-4 flex flex-col gap-3">
+            <button onClick={() => setGameState(s => s ? { ...s, isPaused: !s.isPaused } : null)} className="w-full py-4 bg-zinc-800 text-zinc-300 font-bold rounded-xl uppercase tracking-widest">
+              {gameState.isPaused ? 'Resume Game' : 'Pause Game'}
+            </button>
+            <button onClick={saveAndExit} className="w-full py-4 bg-red-900/20 border border-red-900/50 text-red-500 font-bold rounded-xl uppercase tracking-widest">SAVE & EXIT</button>
+          </div>
+        </div>
+      )}
+
+      {/* --- NOTIFICATIONS --- */}
       {gameState.message && (
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 bg-black/90 px-12 py-5 border border-zinc-800 rounded-3xl text-white text-3xl font-black uppercase tracking-[0.4em] pointer-events-none animate-pulse shadow-2xl z-20">
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 bg-black/80 px-6 py-3 border border-zinc-700 rounded-full text-white font-bold text-sm tracking-widest pointer-events-none animate-pulse z-20 whitespace-nowrap">
           {gameState.message}
         </div>
       )}
 
-      {/* CHEST MODAL */}
+      {/* --- BOTTOM ACTION BAR --- */}
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-lg flex gap-4 pointer-events-auto z-10 px-6 items-end">
+
+        {/* LEFT HAND */}
+        <button onClick={() => handleSlotAction(eL, 'left')} className={`flex-1 aspect-square bg-zinc-900/90 backdrop-blur-md border-2 ${eL ? 'border-zinc-500' : 'border-zinc-800'} rounded-[1.5rem] flex flex-col items-center justify-center relative active:scale-95 transition-all shadow-lg`}>
+          <div className="text-[9px] absolute top-2 text-zinc-500 font-bold tracking-widest uppercase">Left</div>
+          {eL ? (
+            <>
+              <div className="text-4xl pb-2">{ITEM_ICONS[eL.type]}</div>
+              <div className="absolute bottom-2 text-[9px] text-zinc-400 font-bold bg-zinc-950/50 px-2 rounded">{eL.name}</div>
+            </>
+          ) : <div className="text-zinc-700 text-2xl">✋</div>}
+        </button>
+
+        {/* POCKET */}
+        <button onClick={() => handleSlotAction(eP, 'pocket')} className={`flex-1 aspect-square bg-zinc-900/90 backdrop-blur-md border-2 ${eP ? 'border-blue-500/50' : 'border-zinc-800'} rounded-[1.5rem] flex flex-col items-center justify-center relative active:scale-95 transition-all shadow-lg`}>
+          <div className="text-[9px] absolute top-2 text-zinc-500 font-bold tracking-widest uppercase">Pocket</div>
+          {eP ? (
+            <>
+              <div className="text-4xl pb-2">{ITEM_ICONS[eP.type]}</div>
+              <div className="absolute bottom-2 text-[9px] text-zinc-400 font-bold bg-zinc-950/50 px-2 rounded">{eP.name}</div>
+              {eP.type === Types.ItemType.FLASHLIGHT && player.isFlashlightOn && <div className="absolute inset-0 bg-yellow-500/10 animate-pulse pointer-events-none rounded-[1.5rem] border border-yellow-500/30" />}
+            </>
+          ) : <div className="text-zinc-700 text-2xl">🎒</div>}
+        </button>
+
+        {/* RIGHT HAND */}
+        <button onClick={() => handleSlotAction(eR, 'right')} className={`flex-1 aspect-square bg-red-950/20 backdrop-blur-md border-2 ${eR ? 'border-red-600' : 'border-red-900/30'} rounded-[1.5rem] flex flex-col items-center justify-center relative active:scale-95 transition-all shadow-lg`}>
+          <div className="text-[9px] absolute top-2 text-red-500/50 font-bold tracking-widest uppercase">Attack</div>
+          {eR ? (
+            <>
+              <div className="text-4xl pb-2">{ITEM_ICONS[eR.type]}</div>
+              <div className="absolute bottom-2 text-[9px] text-red-400 font-bold bg-black/40 px-2 rounded border border-red-900/30">{eR.name}</div>
+            </>
+          ) : <div className="text-zinc-700 text-2xl">⚔️</div>}
+        </button>
+
+      </div>
+
+      {/* CHEST MODAL (Mobile Style) */}
       {gameState.activeChestId && (
-        <div onMouseUp={(e) => { e.stopPropagation(); onDrop('chest'); }} className="absolute left-1/2 top-1/2 -translate-x-full -translate-y-1/2 p-8 bg-zinc-900/95 backdrop-blur-3xl border border-yellow-800/50 rounded-[3rem] w-80 pointer-events-auto mr-16 shadow-2xl z-30">
-          <h2 className="text-[11px] tracking-widest uppercase border-b border-zinc-800 pb-4 mb-6 font-bold text-yellow-600">DEPOSITED_CARGO</h2>
-          <div className="space-y-4">
-            {activeChest?.data.items.map((it: any) => (
-              <div key={it.id} onMouseDown={(e) => { e.stopPropagation(); onDragStart(it.id); }} className="p-4 bg-zinc-800 border border-zinc-700 cursor-grab flex items-center gap-5 hover:border-yellow-500 rounded-2xl">
-                <span className="text-3xl">{ITEM_ICONS[it.type as Types.ItemType]}</span>
-                <div className="text-[11px] font-black uppercase">{it.name}</div>
-              </div>
-            ))}
-            {activeChest?.data.items.length === 0 && <div className="text-zinc-600 text-center py-8 text-[10px] font-bold uppercase tracking-widest">EMPTY_CACHE</div>}
+        <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-center justify-center pointer-events-auto p-4">
+          <div className="bg-zinc-900 border border-yellow-700/50 p-6 rounded-3xl w-full max-w-sm shadow-2xl flex flex-col max-h-[70vh]">
+            <h2 className="text-yellow-500 font-bold uppercase tracking-widest mb-6 text-center text-lg">Chest Content</h2>
+            <div className="grid grid-cols-4 gap-3 mb-4 overflow-y-auto p-2">
+              {gameState.entities.find(e => e.id === gameState.activeChestId)?.data.items.map((it: any) => (
+                <button key={it.id} onClick={() => {
+                  // Loot item
+                  setGameState(s => {
+                    if (!s) return null;
+                    const chest = s.entities.find(e => e.id === s.activeChestId);
+                    if (!chest) return s;
+                    const item = chest.data.items.find((i: any) => i.id === it.id);
+                    if (!item) return s;
+
+                    // Add to player
+                    const p = { ...s.player };
+                    p.inventory.push(item);
+                    chest.data.items = chest.data.items.filter((i: any) => i.id !== it.id);
+
+                    return { ...s, player: p };
+                  });
+                }} className="aspect-square bg-black border border-yellow-900/30 rounded-xl flex items-center justify-center text-2xl hover:bg-yellow-900/20 active:scale-95 transition-transform">
+                  {ITEM_ICONS[it.type as Types.ItemType]}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setGameState(s => s ? { ...s, activeChestId: null } : null)} className="mt-auto w-full py-4 bg-zinc-800 rounded-xl text-zinc-400 font-bold uppercase tracking-widest">CLOSE</button>
           </div>
         </div>
       )}
 
-      {/* ACTION HUD */}
-      <div className="absolute bottom-12 left-1/2 -translate-x-1/2 pointer-events-auto flex items-end gap-8 bg-black/30 backdrop-blur-xl p-10 rounded-[3.5rem] border border-zinc-900 shadow-2xl">
-        {[eL, eR].map((it, i) => (
-          <div key={i} onMouseUp={(e) => { e.stopPropagation(); onDrop(i === 0 ? 'left' : 'right'); }} className={`w-36 h-36 border-2 flex flex-col items-center justify-center bg-zinc-950/80 backdrop-blur-2xl relative rounded-[2.5rem] transition-all ${it ? (i === 0 ? 'border-yellow-600/40' : 'border-red-600/40') : 'border-zinc-900 border-dashed'}`}>
-            <span className="text-6xl">{it ? ITEM_ICONS[it.type] : ''}</span>
-            <span className="text-[9px] text-zinc-600 font-black mt-4 uppercase tracking-tighter">{i === 0 ? 'L_LINK' : 'R_LINK'}</span>
-            {it && (
-              <div className="absolute top-4 right-4 text-[11px] font-black text-white bg-black/60 px-3 py-0.5 rounded-full border border-white/10">
-                {it.type === Types.ItemType.FLASHLIGHT && `${Math.ceil(it.durability!)}%`}
-                {it.type === Types.ItemType.KNIFE && `X${Math.ceil(it.durability!)}`}
-                {it.type === Types.ItemType.GUN && `${it.count}R`}
-              </div>
-            )}
-          </div>
-        ))}
-        <div onMouseUp={(e) => { e.stopPropagation(); onDrop('consume'); }} className="w-28 h-28 border border-dashed border-zinc-800 flex flex-col items-center justify-center hover:bg-zinc-900/80 backdrop-blur-2xl rounded-[2.5rem] cursor-pointer transition-all hover:scale-105 active:scale-95 group">
-          <span className="text-4xl group-hover:scale-110">💊</span><span className="text-[9px] uppercase font-black mt-4 text-zinc-600">APPLY</span>
-        </div>
-      </div>
-
       {gameState.isPaused && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-lg flex flex-col items-center justify-center z-[100]">
-          <h2 className="text-5xl font-black text-white tracking-[1em] mb-12 animate-pulse">SUSPENDED</h2>
-          <button onClick={() => setGameState(s => s ? { ...s, isPaused: false } : null)} className="px-16 py-5 bg-white text-black font-black uppercase tracking-[0.3em] hover:scale-110 transition-transform rounded-full">Restore Link</button>
+          <h2 className="text-4xl font-black text-white tracking-[0.5em] mb-12 animate-pulse">PAUSED</h2>
+          <button onClick={() => setGameState(s => s ? { ...s, isPaused: false } : null)} className="px-12 py-4 bg-white text-black font-black uppercase tracking-[0.2em] rounded-full active:scale-95 transition-transform">RESUME</button>
         </div>
       )}
 
       {gameState.isGameOver && (
-        <div className="fixed inset-0 bg-black z-[99999] flex flex-col items-center justify-center text-center p-20">
-          <h1 className="text-[12rem] font-black text-red-950 mb-0 flicker uppercase leading-none tracking-tighter">LOST</h1>
-          <p className="text-zinc-700 mb-20 italic text-xl tracking-[1em] font-black uppercase">"{gameState.deathReason}"</p>
-          <button onClick={returnToMenu} className="px-32 py-10 bg-zinc-100 text-black text-sm hover:bg-white transition-all uppercase font-black tracking-[0.6em] rounded-full active:scale-95 shadow-2xl">RETURN_TO_BASE</button>
+        <div className="fixed inset-0 bg-black z-[99999] flex flex-col items-center justify-center text-center p-10">
+          <h1 className="text-8xl font-black text-red-600 mb-4 flicker uppercase leading-none tracking-tighter">DIED</h1>
+          <p className="text-zinc-500 mb-16 italic text-sm tracking-[0.5em] font-bold uppercase">"{gameState.deathReason}"</p>
+          <button onClick={returnToMenu} className="px-12 py-4 bg-zinc-800 border border-zinc-700 text-white text-xs hover:bg-zinc-700 transition-all uppercase font-black tracking-[0.3em] rounded-lg active:scale-95">RESTART MISSION</button>
         </div>
       )}
+
     </div>
   );
 };
