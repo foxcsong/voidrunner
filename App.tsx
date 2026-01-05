@@ -74,7 +74,15 @@ const App: React.FC = () => {
   const lastTimeRef = useRef<number>(performance.now());
   const lastShotTimeRef = useRef<number>(0);
   const frameIdRef = useRef<number>(0);
+
+  // Asset Refs
   const playerImgRef = useRef<HTMLImageElement | null>(null);
+  const monsterImgRef = useRef<HTMLImageElement | null>(null);
+  const wallTopImgRef = useRef<HTMLImageElement | null>(null);
+  const wallFaceImgRef = useRef<HTMLImageElement | null>(null);
+  const floorImgRef = useRef<HTMLImageElement | null>(null);
+  const chestImgRef = useRef<HTMLImageElement | null>(null);
+
   const particlesRef = useRef<Particle[]>([]);
   const nextParticleIdRef = useRef(0);
 
@@ -82,9 +90,18 @@ const App: React.FC = () => {
     const save = localStorage.getItem(SAVE_KEY);
     setHasSave(!!save);
 
-    const img = new Image();
-    img.src = '/assets/player.png';
-    img.onload = () => { playerImgRef.current = img; };
+    const loadImg = (src: string, ref: React.MutableRefObject<HTMLImageElement | null>) => {
+      const img = new Image();
+      img.src = src;
+      img.onload = () => { ref.current = img; };
+    };
+
+    loadImg('/assets/player.png', playerImgRef);
+    loadImg('/assets/monster.png', monsterImgRef);
+    loadImg('/assets/wall_top.png', wallTopImgRef);
+    loadImg('/assets/wall_face.png', wallFaceImgRef);
+    loadImg('/assets/floor.png', floorImgRef);
+    loadImg('/assets/chest.png', chestImgRef);
   }, [screen]);
 
   const initGame = useCallback((loadExisting = false) => {
@@ -378,57 +395,133 @@ const App: React.FC = () => {
 
     ctx.save(); ctx.translate(ww / 2 - player.x * s, wh / 2 - player.y * s);
 
-    const rangeX = 20; const rangeY = 15;
-    for (let y = Math.floor(player.y - rangeY); y < player.y + rangeY; y++) {
-      for (let x = Math.floor(player.x - rangeX); x < player.x + rangeX; x++) {
+    const rangeX = 14; const rangeY = 10; // Reduced range slightly for performance with images
+    const startX = Math.floor(player.x - rangeX);
+    const endX = Math.floor(player.x + rangeX);
+    const startY = Math.floor(player.y - rangeY);
+    const endY = Math.floor(player.y + rangeY);
+
+    // DRAW FLOOR
+    if (floorImgRef.current) {
+      for (let y = startY; y <= endY; y++) {
+        for (let x = startX; x <= endX; x++) {
+          if (y >= 0 && y < map.length && x >= 0 && x < map[0].length) {
+            ctx.drawImage(floorImgRef.current, x * s, y * s, s, s);
+          }
+        }
+      }
+    } else {
+      ctx.fillStyle = '#09090b'; ctx.fillRect(0, 0, ww, wh); // Fallback
+    }
+
+    // PREPARE RENDER LIST FOR Y-SORTING
+    interface RenderItem {
+      type: 'WALL' | 'ENTITY' | 'PLAYER' | 'PARTICLE';
+      y: number; // sort key (bottom of object)
+      draw: () => void;
+    }
+    const renderList: RenderItem[] = [];
+
+    // Add Walls
+    for (let y = startY; y <= endY; y++) {
+      for (let x = startX; x <= endX; x++) {
         if (map[y]?.[x] === 1) {
-          ctx.fillStyle = '#16141a'; ctx.fillRect(x * s, y * s, s, s);
-          ctx.strokeStyle = '#25232d'; ctx.lineWidth = 1; ctx.strokeRect(x * s + 1, y * s + 1, s - 2, s - 2);
-        } else if (map[y]?.[x] === 0) {
-          ctx.strokeStyle = '#08060f'; ctx.strokeRect(x * s, y * s, s, s);
+          renderList.push({
+            type: 'WALL',
+            y: (y + 1) * s, // Bottom of the wall block
+            draw: () => {
+              // Draw Wall Face (creates height)
+              if (wallFaceImgRef.current) ctx.drawImage(wallFaceImgRef.current, x * s, y * s - 10, s, s + 10);
+              else { ctx.fillStyle = '#444'; ctx.fillRect(x * s, y * s, s, s); }
+
+              // Draw Wall Top (shifted up)
+              if (wallTopImgRef.current) ctx.drawImage(wallTopImgRef.current, x * s, y * s - s, s, s);
+              else { ctx.fillStyle = '#222'; ctx.fillRect(x * s, y * s - s, s, s); }
+
+              // Shadow
+              ctx.fillStyle = 'rgba(0,0,0,0.5)';
+              ctx.fillRect(x * s, y * s + s - 5, s, 5);
+            }
+          });
         }
       }
     }
 
+    // Add Entities
     entities.forEach(e => {
       if (Math.abs(e.x - player.x) > rangeX || Math.abs(e.y - player.y) > rangeY) return;
       if (!e.type || (e.type === Types.EntityType.MONSTER && e.health! <= 0)) return;
-      if (e.type === Types.EntityType.CHEST) {
-        ctx.fillStyle = e.data.isOpen ? '#3a2601' : '#a16207';
-        ctx.fillRect(e.x * s - 14, e.y * s - 14, 28, 28);
-        ctx.strokeStyle = '#000'; ctx.strokeRect(e.x * s - 14, e.y * s - 14, 28, 28);
-      } else {
-        ctx.fillStyle = '#7f1d1d'; ctx.beginPath(); ctx.arc(e.x * s, e.y * s, 15, 0, Math.PI * 2); ctx.fill();
+
+      renderList.push({
+        type: 'ENTITY',
+        y: e.y * s,
+        draw: () => {
+          if (e.type === Types.EntityType.CHEST) {
+            const size = 32;
+            if (chestImgRef.current) {
+              ctx.drawImage(chestImgRef.current, e.x * s - size / 2, e.y * s - size / 2 - 10, size, size);
+            } else {
+              ctx.fillStyle = e.data.isOpen ? '#3a2601' : '#a16207';
+              ctx.fillRect(e.x * s - 14, e.y * s - 14, 28, 28);
+            }
+          } else if (e.type === Types.EntityType.MONSTER) {
+            const size = 50;
+            if (monsterImgRef.current) {
+              ctx.save();
+              // Simple bounce animation for monster
+              const bounce = Math.sin(performance.now() * 0.005 + e.x) * 3;
+              ctx.drawImage(monsterImgRef.current, e.x * s - size / 2, e.y * s - size / 2 - 15 + bounce, size, size);
+              ctx.restore();
+            } else {
+              ctx.fillStyle = '#7f1d1d'; ctx.beginPath(); ctx.arc(e.x * s, e.y * s, 15, 0, Math.PI * 2); ctx.fill();
+            }
+          }
+        }
+      });
+    });
+
+    // Add Player
+    renderList.push({
+      type: 'PLAYER',
+      y: player.y * s,
+      draw: () => {
+        const isMoving = !!(keysRef.current['KeyW'] || keysRef.current['KeyS'] || keysRef.current['KeyA'] || keysRef.current['KeyD'] || keysRef.current['ArrowUp'] || keysRef.current['ArrowDown'] || keysRef.current['ArrowLeft'] || keysRef.current['ArrowRight']);
+        const bob = isMoving ? Math.sin(performance.now() * 0.015) * 4 : Math.sin(performance.now() * 0.003) * 2;
+        const shake = isMoving ? Math.cos(performance.now() * 0.015) * 0.05 : 0;
+
+        if (playerImgRef.current) {
+          ctx.save();
+          ctx.translate(player.x * s, player.y * s + bob); // Position relative to world, camera translates context
+          ctx.rotate(shake);
+          const size = 54;
+          ctx.drawImage(playerImgRef.current, -size / 2, -size / 2 - 12, size, size);
+          ctx.restore();
+        } else {
+          ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(player.x * s, player.y * s, 12, 0, Math.PI * 2); ctx.fill();
+        }
       }
     });
-    ctx.restore();
 
-    // PARTICLES
+    // Add Particles
     particlesRef.current.forEach(p => {
-      const opacity = p.life / p.maxLife;
-      ctx.fillStyle = `rgba(150, 140, 130, ${opacity * 0.4})`;
-      ctx.beginPath();
-      ctx.arc(ww / 2 + (p.x - player.x) * s, wh / 2 + (p.y - player.y) * s, p.size, 0, Math.PI * 2);
-      ctx.fill();
+      renderList.push({
+        type: 'PARTICLE',
+        y: p.y * s,
+        draw: () => {
+          const opacity = p.life / p.maxLife;
+          ctx.fillStyle = `rgba(150, 140, 130, ${opacity * 0.4})`;
+          ctx.beginPath();
+          ctx.arc(p.x * s, p.y * s, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
     });
 
-    // PLAYER
-    const isMoving = !!(keysRef.current['KeyW'] || keysRef.current['KeyS'] || keysRef.current['KeyA'] || keysRef.current['KeyD'] || keysRef.current['ArrowUp'] || keysRef.current['ArrowDown'] || keysRef.current['ArrowLeft'] || keysRef.current['ArrowRight']);
-    const bob = isMoving ? Math.sin(performance.now() * 0.015) * 4 : Math.sin(performance.now() * 0.003) * 2;
-    const shake = isMoving ? Math.cos(performance.now() * 0.015) * 0.05 : 0;
+    // SORT AND DRAW
+    renderList.sort((a, b) => a.y - b.y);
+    renderList.forEach(item => item.draw());
 
-    if (playerImgRef.current) {
-      ctx.save();
-      ctx.translate(ww / 2, wh / 2 + bob);
-      ctx.rotate(shake);
-      // Draw sprite (approx 48x48 pixels)
-      const pw = 48, ph = 48;
-      ctx.drawImage(playerImgRef.current, -pw / 2, -ph / 2, pw, ph);
-      ctx.restore();
-    } else {
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ww / 2, wh / 2, 12, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 3; ctx.stroke();
-    }
+    ctx.restore();
 
     // DYNAMIC VISION MASK
     const visionCanvas = document.createElement('canvas');
