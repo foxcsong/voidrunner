@@ -370,12 +370,14 @@ const App: React.FC = () => {
       let nextMessage = nextMessageTimeout <= 0 ? '' : prev.message;
 
       const player = { ...prev.player };
-      // Sprinting controlled by proper logic combining Shift key and Touch Double Tap
-      player.sprinting = (!!keysRef.current['ShiftLeft'] || isTouchSprintingRef.current) && player.hydration > 10;
+      // Sprinting: Supports Shift (Left/Right) AND Touch Double Tap
+      const isShiftHeld = !!keysRef.current['ShiftLeft'] || !!keysRef.current['ShiftRight'];
+      player.sprinting = (isShiftHeld || isTouchSprintingRef.current) && player.hydration > 10;
 
       const speed = (player.sprinting ? 6.2 : 3.8) * delta;
 
       let dx = 0, dy = 0;
+      // ... (omitting strict match to avoid block size issues, will match surrounding unique lines)
       // KEYBOARD
       if (keysRef.current['KeyW'] || keysRef.current['ArrowUp']) dy -= speed;
       if (keysRef.current['KeyS'] || keysRef.current['ArrowDown']) dy += speed;
@@ -439,10 +441,10 @@ const App: React.FC = () => {
 
       // Need higher base rates for visibility
       // Base: Walk. Idle is 0.2x, Run is 2.0x.
-      // 0.5/s means 200s (3min) to starve walking.
-      // Idle: 0.1/s (1000s). Run: 1.0/s (100s).
-      player.hunger -= 0.5 * delta * rateMultiplier;
-      player.hydration -= 0.8 * delta * rateMultiplier;
+      // Depletion Rates Reduced by 50% per user request:
+      // Hunger: 0.5 -> 0.25, Hydration: 0.8 -> 0.4
+      player.hunger -= 0.25 * delta * rateMultiplier;
+      player.hydration -= 0.4 * delta * rateMultiplier;
 
       if (player.hunger <= 0 || player.hydration <= 0) player.health -= 15 * delta;
 
@@ -979,21 +981,21 @@ const App: React.FC = () => {
           {/* HP */}
           <div className="text-red-600 text-[12px] w-4 text-center">♥</div>
           <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
-            <div className="absolute top-0 left-0 h-full bg-red-600 transition-all duration-300" style={{ width: `${Math.max(0, player.health)}%` }}></div>
+            <div className="absolute top-0 left-0 h-full bg-red-600" style={{ width: `${Math.max(0, player.health).toFixed(1)}%` }}></div>
             <div className="absolute inset-0 flex items-center justify-center text-[8px] font-mono text-white/50">{Math.floor(player.health)}%</div>
           </div>
 
           {/* ENERGY (Hunger) */}
           <div className="text-yellow-500 text-[12px] w-4 text-center">⚡</div>
           <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
-            <div className="absolute top-0 left-0 h-full bg-green-500 transition-all duration-300" style={{ width: `${Math.max(0, player.hunger)}%` }}></div>
+            <div className="absolute top-0 left-0 h-full bg-green-500" style={{ width: `${Math.max(0, player.hunger).toFixed(1)}%` }}></div>
             <div className="absolute inset-0 flex items-center justify-center text-[8px] font-mono text-white/50">{Math.floor(player.hunger)}%</div>
           </div>
 
           {/* WATER (Hydration) */}
           <div className="text-blue-500 text-[12px] w-4 text-center">💧</div>
           <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
-            <div className="absolute top-0 left-0 h-full bg-blue-500 transition-all duration-300" style={{ width: `${Math.max(0, player.hydration)}%` }}></div>
+            <div className="absolute top-0 left-0 h-full bg-blue-500" style={{ width: `${Math.max(0, player.hydration).toFixed(1)}%` }}></div>
             <div className="absolute inset-0 flex items-center justify-center text-[8px] font-mono text-white/50">{Math.floor(player.hydration)}%</div>
           </div>
 
