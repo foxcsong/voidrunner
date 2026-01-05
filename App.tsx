@@ -980,18 +980,21 @@ const App: React.FC = () => {
           <div className="text-red-600 text-[12px] w-4 text-center">♥</div>
           <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
             <div className="absolute top-0 left-0 h-full bg-red-600 transition-all duration-300" style={{ width: `${Math.max(0, player.health)}%` }}></div>
+            <div className="absolute inset-0 flex items-center justify-center text-[8px] font-mono text-white/50">{Math.floor(player.health)}%</div>
           </div>
 
-          {/* ENERGY */}
+          {/* ENERGY (Hunger) */}
           <div className="text-yellow-500 text-[12px] w-4 text-center">⚡</div>
           <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
             <div className="absolute top-0 left-0 h-full bg-green-500 transition-all duration-300" style={{ width: `${Math.max(0, player.hunger)}%` }}></div>
+            <div className="absolute inset-0 flex items-center justify-center text-[8px] font-mono text-white/50">{Math.floor(player.hunger)}%</div>
           </div>
 
-          {/* WATER */}
+          {/* WATER (Hydration) */}
           <div className="text-blue-500 text-[12px] w-4 text-center">💧</div>
           <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
             <div className="absolute top-0 left-0 h-full bg-blue-500 transition-all duration-300" style={{ width: `${Math.max(0, player.hydration)}%` }}></div>
+            <div className="absolute inset-0 flex items-center justify-center text-[8px] font-mono text-white/50">{Math.floor(player.hydration)}%</div>
           </div>
 
         </div>
