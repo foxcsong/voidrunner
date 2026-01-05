@@ -120,30 +120,19 @@ const App: React.FC = () => {
   // SMART LOOTING LOGIC
   const autoEquip = (player: Types.Player, item: Types.InventoryItem): Types.Player => {
     const p = { ...player };
-    // 1. Flashlight -> Prefer Left, then Pocket, then Right (if desperate)
+    // 1. Flashlight -> Prefer Left, then Pocket (Right is for weapons)
     if (item.type === Types.ItemType.FLASHLIGHT) {
-      const hasLightEquipped =
-        (p.equippedLeftId && p.inventory.find(i => i.id === p.equippedLeftId)?.type === Types.ItemType.FLASHLIGHT) ||
-        (p.equippedRightId && p.inventory.find(i => i.id === p.equippedRightId)?.type === Types.ItemType.FLASHLIGHT) ||
-        (p.equippedPocketId && p.inventory.find(i => i.id === p.equippedPocketId)?.type === Types.ItemType.FLASHLIGHT);
-
-      if (!hasLightEquipped) {
-        if (!p.equippedLeftId) p.equippedLeftId = item.id;
-        else if (!p.equippedPocketId) p.equippedPocketId = item.id;
-        else if (!p.equippedRightId) p.equippedRightId = item.id;
-      }
+      if (!p.equippedLeftId) p.equippedLeftId = item.id;
+      else if (!p.equippedPocketId) p.equippedPocketId = item.id;
     }
-    // 2. Weapon -> Prefer Right, then Pocket, then Left
+    // 2. Weapon -> Prefer Right, then Pocket (Left is for utility/light)
     else if (item.type === Types.ItemType.GUN || item.type === Types.ItemType.KNIFE) {
-      const hasWeaponEquipped =
-        (p.equippedRightId && [Types.ItemType.GUN, Types.ItemType.KNIFE].includes(p.inventory.find(i => i.id === p.equippedRightId)?.type as any)) ||
-        (p.equippedLeftId && [Types.ItemType.GUN, Types.ItemType.KNIFE].includes(p.inventory.find(i => i.id === p.equippedLeftId)?.type as any));
-
-      if (!hasWeaponEquipped) {
-        if (!p.equippedRightId) p.equippedRightId = item.id;
-        else if (!p.equippedPocketId) p.equippedPocketId = item.id;
-        else if (!p.equippedLeftId) p.equippedLeftId = item.id;
-      }
+      if (!p.equippedRightId) p.equippedRightId = item.id;
+      else if (!p.equippedPocketId) p.equippedPocketId = item.id;
+    }
+    // 3. Supplies (Food/Water) -> Prefer Pocket
+    else if (item.type === Types.ItemType.FOOD || item.type === Types.ItemType.WATER) {
+      if (!p.equippedPocketId) p.equippedPocketId = item.id;
     }
     return p;
   };
@@ -194,7 +183,7 @@ const App: React.FC = () => {
     });
 
     setGameState({
-      player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [{ id: 'init-f', type: Types.ItemType.FLASHLIGHT, name: 'FLASHLIGHT', durability: 100 }], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false },
+      player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [{ id: 'init-f', type: Types.ItemType.FLASHLIGHT, name: 'FLASHLIGHT', durability: 100 }], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false, hitFlash: 0 },
       map, entities, isGameOver: false, deathReason: '', message: 'SYSTEM_BOOT_COMPLETE', messageTimeout: 4, chaseActive: false, survivalTime: 0, isPaused: false, activeChestId: null, draggingItemId: null
     });
     setScreen('PLAYING');
@@ -419,6 +408,7 @@ const App: React.FC = () => {
       const r = 0.2, bodyR = 0.45;
       const nx = player.x + dx, ny = player.y + dy;
       let canX = true, canY = true;
+      const isMoving = dx !== 0 || dy !== 0;
 
       const checkWall = (tx: number, ty: number) => {
         const mx = Math.floor(tx), my = Math.floor(ty);
@@ -438,9 +428,18 @@ const App: React.FC = () => {
       if (canX) player.x = nx;
       if (canY) player.y = ny;
 
-      player.hunger -= 0.04 * delta;
-      player.hydration -= (player.sprinting ? 0.15 : 0.07) * delta;
-      if (player.hunger <= 0 || player.hydration <= 0) player.health -= 8 * delta;
+      // Depletion Rates
+      // Baseline (Walk): Hunger ~0.08/s, Hydration ~0.12/s
+      // Idle: 20%, Run: 200%
+      let rateMultiplier = 1.0;
+      if (player.sprinting && isMoving) rateMultiplier = 2.0;
+      else if (!isMoving) rateMultiplier = 0.2;
+
+      // Need higher base rates for visibility
+      player.hunger -= 0.15 * delta * rateMultiplier;
+      player.hydration -= 0.25 * delta * rateMultiplier;
+
+      if (player.hunger <= 0 || player.hydration <= 0) player.health -= 5 * delta;
 
       const flItemIndex = player.inventory.findIndex(i => i.type === Types.ItemType.FLASHLIGHT && (i.id === player.equippedLeftId || i.id === player.equippedRightId || i.id === player.equippedPocketId));
       const hasFl = flItemIndex !== -1;
@@ -543,16 +542,26 @@ const App: React.FC = () => {
           const ang = Math.atan2(nextE.data.nextTarget.y - nextE.y, nextE.data.nextTarget.x - nextE.x);
           // Speed x2 when chasing (was 2.2, now 4.4?) or relative to base.
           // Base walk speed ~1.5. Chase speed ~3.5
+          // Speed x2 when chasing (was 2.2, now 4.4?) or relative to base.
+          // Base walk speed ~1.5. Chase speed ~3.5
           const speed = nextE.data.state === 'CHASING' ? 3.5 : 1.5;
           const ms = speed * delta;
           nextE.x += Math.cos(ang) * ms;
           nextE.y += Math.sin(ang) * ms;
         }
-        if (dP < 0.6) player.health -= 30 * delta;
+
+        // Damage Player Logic
+        if (dP < 0.6) {
+          player.health -= 30 * delta;
+          player.hitFlash = 0.5; // Trigger flash
+        }
         return nextE;
       });
 
-      // No auto-fire anymore, relying on clicks
+      // Player Hit Flash Decay
+      if (player.hitFlash && player.hitFlash > 0) {
+        player.hitFlash = Math.max(0, player.hitFlash - delta * 2);
+      }
       // REMOVED OLD GUN/KNIFE LOGIC HERE
 
       let activeChestId = prev.activeChestId;
@@ -941,6 +950,12 @@ const App: React.FC = () => {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         className="absolute inset-0 block w-full h-full cursor-crosshair touch-none"
+      />
+
+      {/* HIT FLASH OVERLAY */}
+      <div
+        className="absolute inset-0 bg-red-600 pointer-events-none transition-opacity duration-75 z-20"
+        style={{ opacity: (gameState?.player.hitFlash || 0) }}
       />
 
       {/* --- TOP BAR --- */}

@@ -51,6 +51,7 @@ export interface Player {
   equippedRightId: string | null;
   equippedPocketId: string | null;
   sprinting: boolean;
+  hitFlash?: number; // Visual feedback intensity (0-1)
 }
 
 export interface GameState {
