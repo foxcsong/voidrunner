@@ -20,13 +20,22 @@ export enum EntityType {
   MONSTER = 'MONSTER'
 }
 
+export interface DamageNumber {
+  id: number;
+  x: number;
+  y: number;
+  value: number;
+  life: number;
+  color: string;
+}
+
 export interface Entity {
   id: string;
   x: number;
   y: number;
   type: EntityType;
   health?: number;
-  data?: any; 
+  data?: any;
 }
 
 export interface Player {

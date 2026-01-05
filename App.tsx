@@ -86,6 +86,9 @@ const App: React.FC = () => {
   const particlesRef = useRef<Particle[]>([]);
   const nextParticleIdRef = useRef(0);
 
+  const damageNumbersRef = useRef<Types.DamageNumber[]>([]);
+  const nextDamageNumberIdRef = useRef(0);
+
   useEffect(() => {
     const save = localStorage.getItem(SAVE_KEY);
     setHasSave(!!save);
@@ -108,7 +111,12 @@ const App: React.FC = () => {
     if (loadExisting) {
       const saved = localStorage.getItem(SAVE_KEY);
       if (saved) {
-        setGameState(JSON.parse(saved));
+        const state = JSON.parse(saved);
+        // Reset transient visual states
+        state.entities.forEach((e: any) => {
+          if (e.data) { e.data.hitFlash = 0; }
+        });
+        setGameState(state);
         setScreen('PLAYING');
         return;
       }
@@ -140,7 +148,7 @@ const App: React.FC = () => {
       entities.push({
         id: `e-${i}`, x: pos.x, y: pos.y, type, health: 75,
         data: type === Types.EntityType.CHEST ? { items, isOpen: false } : {
-          nextTarget: null, lastPathUpdate: 0, spawnX: pos.x, spawnY: pos.y, state: 'IDLE'
+          nextTarget: null, lastPathUpdate: 0, spawnX: pos.x, spawnY: pos.y, state: 'IDLE', hitFlash: 0
         }
       });
     });
@@ -150,6 +158,7 @@ const App: React.FC = () => {
       map, entities, isGameOver: false, deathReason: '', message: 'SYSTEM_BOOT_COMPLETE', messageTimeout: 4, chaseActive: false, survivalTime: 0, isPaused: false, activeChestId: null, draggingItemId: null
     });
     setScreen('PLAYING');
+    damageNumbersRef.current = [];
   }, []);
 
   const saveAndExit = () => {
@@ -157,6 +166,91 @@ const App: React.FC = () => {
       localStorage.setItem(SAVE_KEY, JSON.stringify({ ...gameState, isPaused: false }));
       setScreen('MENU');
       setGameState(null);
+    }
+  };
+
+  const spawnDamageNumber = (x: number, y: number, value: number, color: string = '#ef4444') => {
+    damageNumbersRef.current.push({
+      id: nextDamageNumberIdRef.current++,
+      x, y, value, color, life: 1.0
+    });
+  };
+
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!gameState || gameState.isPaused || gameState.isGameOver) return;
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const s = Constants.CELL_SIZE;
+    const ww = window.innerWidth, wh = window.innerHeight;
+
+    // Calculate world coordinates from screen click
+    // ScreenX = ww/2 + (worldX - playerX) * s
+    // worldX = (ScreenX - ww/2) / s + playerX
+    const clickX = (e.clientX - rect.left - ww / 2) / s + gameState.player.x;
+    const clickY = (e.clientY - rect.top - wh / 2) / s + gameState.player.y;
+
+    // Determine active weapon
+    const { player } = gameState;
+    const weapons = [player.inventory.find(i => i?.id === player.equippedLeftId), player.inventory.find(i => i?.id === player.equippedRightId)].filter(Boolean);
+    // Prioritize Gun > Knife
+    const gun = weapons.find(i => i?.type === Types.ItemType.GUN);
+    const knife = weapons.find(i => i?.type === Types.ItemType.KNIFE);
+
+    let attackMade = false;
+    let newEntities = [...gameState.entities];
+
+    if (gun && (gun.count || 0) > 0) {
+      // GUN ATTACK
+      attackMade = true;
+      setGameState(prev => {
+        if (!prev) return null;
+        const nextInv = prev.player.inventory.map(i => i.id === gun.id ? { ...i, count: (i.count! - 1) } : i);
+        return { ...prev, player: { ...prev.player, inventory: nextInv }, message: 'FIRING_SEQUENCE', messageTimeout: 0.5 };
+      });
+
+      // Check hits logic
+      newEntities = newEntities.map(e => {
+        if (e.type === Types.EntityType.MONSTER && e.health! > 0) {
+          const dist = Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2);
+          if (dist < 0.8 && isLineOfSightClear(player.x, player.y, e.x, e.y, gameState.map)) {
+            spawnDamageNumber(e.x, e.y - 0.5, 40, '#fbbf24');
+            return { ...e, health: e.health! - 40, data: { ...e.data, hitFlash: 0.2, state: 'CHASING' } };
+          }
+        }
+        return e;
+      });
+
+    } else if (knife && (knife.durability || 0) > 0) {
+      // KNIFE ATTACK
+      // Knife requires clicking ON the monster AND being close
+      const targetMonster = newEntities.find(e => e.type === Types.EntityType.MONSTER && e.health! > 0 && Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2) < 0.8);
+
+      if (targetMonster) {
+        const distToPlayer = Math.sqrt((targetMonster.x - player.x) ** 2 + (targetMonster.y - player.y) ** 2);
+        if (distToPlayer < 2.0) {
+          attackMade = true;
+          setGameState(prev => {
+            if (!prev) return null;
+            const nextInv = prev.player.inventory.map(i => i.id === knife.id ? { ...i, durability: (i.durability! - 2) } : i);
+            return { ...prev, player: { ...prev.player, inventory: nextInv }, message: 'MELEE_ENGAGED', messageTimeout: 0.5 };
+          });
+
+          newEntities = newEntities.map(e => {
+            if (e.id === targetMonster.id) {
+              spawnDamageNumber(e.x, e.y - 0.5, 25, '#ef4444');
+              return { ...e, health: e.health! - 25, data: { ...e.data, hitFlash: 0.2, state: 'CHASING' } };
+            }
+            return e;
+          });
+        } else {
+          setGameState(prev => prev ? { ...prev, message: 'TARGET_OUT_OF_RANGE', messageTimeout: 1.0 } : null);
+        }
+      }
+    } else {
+      setGameState(prev => prev ? { ...prev, message: 'NO_WEAPON_READY', messageTimeout: 1.0 } : null);
+    }
+
+    if (attackMade) {
+      setGameState(prev => prev ? { ...prev, entities: newEntities } : null);
     }
   };
 
@@ -173,6 +267,11 @@ const App: React.FC = () => {
         life: p.life - delta
       }))
       .filter(p => p.life > 0);
+
+    // Update Damage Numbers
+    damageNumbersRef.current = damageNumbersRef.current
+      .map(dn => ({ ...dn, y: dn.y - 0.5 * delta, life: dn.life - delta }))
+      .filter(dn => dn.life > 0);
 
     setGameState(prev => {
       if (!prev || prev.isGameOver || prev.isPaused) return prev;
@@ -246,7 +345,12 @@ const App: React.FC = () => {
       let nextEntities = prev.entities.map(e => {
         if (e.type !== Types.EntityType.MONSTER || e.health! <= 0) return e;
         const dP = Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2);
-        const nextE = { ...e, data: { ...e.data } };
+
+        // Handle Hit Flash Decay
+        const nextData = { ...e.data };
+        if (nextData.hitFlash > 0) nextData.hitFlash = Math.max(0, nextData.hitFlash - delta);
+
+        const nextE = { ...e, data: nextData };
 
         if (nextE.data.state === 'IDLE') {
           if (dP < 6.0) nextE.data.state = 'CHASING';
@@ -272,7 +376,7 @@ const App: React.FC = () => {
           }
         }
 
-        if (nextE.data.nextTarget) {
+        if (nextE.data.nextTarget && nextE.data.hitFlash <= 0) { // Stun briefly when hit? Maybe not needed, but good for feel
           const ang = Math.atan2(nextE.data.nextTarget.y - nextE.y, nextE.data.nextTarget.x - nextE.x);
           const ms = (nextE.data.state === 'CHASING' ? 2.2 : 1.5) * delta;
           nextE.x += Math.cos(ang) * ms;
@@ -282,55 +386,8 @@ const App: React.FC = () => {
         return nextE;
       });
 
-      // GUN FIRING LOGIC
-      if (keysRef.current['Space'] && time - lastShotTimeRef.current > 400) {
-        const gunId = [player.equippedLeftId, player.equippedRightId].find(id => {
-          const item = player.inventory.find(invIt => invIt.id === id);
-          return item && item.type === Types.ItemType.GUN && item.count! > 0;
-        });
-
-        if (gunId) {
-          lastShotTimeRef.current = time;
-          // Immutably update ammo
-          player.inventory = player.inventory.map(i =>
-            i.id === gunId ? { ...i, count: (i.count || 0) - 1 } : i
-          );
-
-          // Damage calculation
-          nextEntities = nextEntities.map(e => {
-            if (e.type === Types.EntityType.MONSTER && e.health! > 0) {
-              const dist = Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2);
-              if (dist < 12 && isLineOfSightClear(player.x, player.y, e.x, e.y, prev.map)) {
-                return { ...e, health: e.health! - 40 };
-              }
-            }
-            return e;
-          });
-          nextMessage = "WEAPON_DISCHARGED";
-          nextMessageTimeout = 2.0;
-        } else {
-          // Check for knife if no gun or no ammo
-          const knifeId = [player.equippedLeftId, player.equippedRightId].find(id => {
-            const item = player.inventory.find(invIt => invIt.id === id);
-            return item && item.type === Types.ItemType.KNIFE && item.durability! > 0;
-          });
-          if (knifeId) {
-            lastShotTimeRef.current = time;
-            player.inventory = player.inventory.map(i =>
-              i.id === knifeId ? { ...i, durability: (i.durability || 0) - 2 } : i
-            );
-            nextEntities = nextEntities.map(e => {
-              if (e.type === Types.EntityType.MONSTER && e.health! > 0) {
-                const dist = Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2);
-                if (dist < 2.0) return { ...e, health: e.health! - 25 };
-              }
-              return e;
-            });
-            nextMessage = "MELEE_STRIKE";
-            nextMessageTimeout = 1.0;
-          }
-        }
-      }
+      // No auto-fire anymore, relying on clicks
+      // REMOVED OLD GUN/KNIFE LOGIC HERE
 
       let activeChestId = prev.activeChestId;
       if (keysRef.current['KeyE']) {
@@ -416,7 +473,7 @@ const App: React.FC = () => {
 
     // PREPARE RENDER LIST FOR Y-SORTING
     interface RenderItem {
-      type: 'WALL' | 'ENTITY' | 'PLAYER' | 'PARTICLE';
+      type: 'WALL' | 'ENTITY' | 'PLAYER' | 'PARTICLE' | 'DAMAGE_NUMBER';
       y: number; // sort key (bottom of object)
       draw: () => void;
     }
@@ -447,6 +504,25 @@ const App: React.FC = () => {
       }
     }
 
+    // Add Damage Numbers
+    damageNumbersRef.current.forEach(dn => {
+      renderList.push({
+        type: 'DAMAGE_NUMBER',
+        y: dn.y * s + 100, // Always on top
+        draw: () => {
+          ctx.save();
+          ctx.globalAlpha = dn.life;
+          ctx.fillStyle = dn.color;
+          ctx.font = 'bold 24px monospace';
+          ctx.strokeStyle = 'black';
+          ctx.lineWidth = 3;
+          ctx.strokeText(`-${dn.value}`, dn.x * s, dn.y * s);
+          ctx.fillText(`-${dn.value}`, dn.x * s, dn.y * s);
+          ctx.restore();
+        }
+      });
+    });
+
     // Add Entities
     entities.forEach(e => {
       if (Math.abs(e.x - player.x) > rangeX || Math.abs(e.y - player.y) > rangeY) return;
@@ -468,12 +544,25 @@ const App: React.FC = () => {
             const size = 50;
             if (monsterImgRef.current) {
               ctx.save();
+              // Hit Flash Effect
+              if (e.data.hitFlash > 0) {
+                // Simple red tint via composite or filter simulation
+                ctx.globalAlpha = 0.7;
+                ctx.fillStyle = '#ef4444';
+                ctx.beginPath(); ctx.arc(e.x * s, e.y * s - 15, size / 2, 0, Math.PI * 2); ctx.fill();
+                ctx.globalAlpha = 1.0;
+              }
+
               // Simple bounce animation for monster
               const bounce = Math.sin(performance.now() * 0.005 + e.x) * 3;
-              ctx.drawImage(monsterImgRef.current, e.x * s - size / 2, e.y * s - size / 2 - 15 + bounce, size, size);
+              // Shake if hit
+              const shake = e.data.hitFlash > 0 ? (Math.random() - 0.5) * 5 : 0;
+
+              ctx.drawImage(monsterImgRef.current, e.x * s - size / 2 + shake, e.y * s - size / 2 - 15 + bounce, size, size);
               ctx.restore();
             } else {
-              ctx.fillStyle = '#7f1d1d'; ctx.beginPath(); ctx.arc(e.x * s, e.y * s, 15, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = e.data.hitFlash > 0 ? '#ef4444' : '#7f1d1d';
+              ctx.beginPath(); ctx.arc(e.x * s, e.y * s, 15, 0, Math.PI * 2); ctx.fill();
             }
           }
         }
@@ -631,7 +720,7 @@ const App: React.FC = () => {
 
   return (
     <div className="relative w-screen h-screen bg-black text-zinc-200 font-mono overflow-hidden select-none" onMouseUp={() => onDrop('inv')}>
-      <canvas ref={canvasRef} className="absolute inset-0 block w-full h-full" />
+      <canvas ref={canvasRef} onClick={handleCanvasClick} className="absolute inset-0 block w-full h-full cursor-crosshair" />
 
       {/* STATS PANEL */}
       <div className="absolute top-8 left-8 p-6 bg-zinc-950/80 backdrop-blur-2xl border border-zinc-800 rounded-3xl w-72 pointer-events-auto">
