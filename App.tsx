@@ -12,6 +12,14 @@ const ITEM_ICONS: Record<Types.ItemType, string> = {
   [Types.ItemType.GUN]: '🔫',
 };
 
+const ITEM_NAMES: Record<Types.ItemType, string> = {
+  [Types.ItemType.FOOD]: '食物',
+  [Types.ItemType.WATER]: '饮用水',
+  [Types.ItemType.FLASHLIGHT]: '手电筒',
+  [Types.ItemType.KNIFE]: '战术匕首',
+  [Types.ItemType.GUN]: '手枪',
+};
+
 const SAVE_KEY = 'void_labyrinth_save';
 
 interface Particle {
@@ -181,7 +189,7 @@ const App: React.FC = () => {
           items.push({
             id: `it-${i}-${j}-${Math.random()}`,
             type: it,
-            name: it,
+            name: ITEM_NAMES[it],
             durability: (it === Types.ItemType.KNIFE || it === Types.ItemType.FLASHLIGHT) ? 100 : undefined,
             count: it === Types.ItemType.GUN ? 12 : (it === Types.ItemType.FOOD || it === Types.ItemType.WATER ? 1 : undefined)
           });
@@ -197,8 +205,8 @@ const App: React.FC = () => {
 
 
     setGameState({
-      player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [{ id: 'init-f', type: Types.ItemType.FLASHLIGHT, name: 'FLASHLIGHT', durability: 100 }], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false, hitFlash: 0 },
-      map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '', message: 'SYSTEM_BOOT_COMPLETE', messageTimeout: 4, chaseActive: false, survivalTime: 0, isPaused: false, activeChestId: null, draggingItemId: null
+      player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [{ id: 'init-f', type: Types.ItemType.FLASHLIGHT, name: ITEM_NAMES[Types.ItemType.FLASHLIGHT], durability: 100 }], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false, hitFlash: 0 },
+      map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '', message: '系统初始化完成', messageTimeout: 4, chaseActive: false, survivalTime: 0, isPaused: false, activeChestId: null, draggingItemId: null
     });
     setScreen('PLAYING');
     damageNumbersRef.current = [];
@@ -259,7 +267,7 @@ const App: React.FC = () => {
           if (prev.player.equippedLeftId === gun.id) prev.player.equippedLeftId = null;
           if (prev.player.equippedRightId === gun.id) prev.player.equippedRightId = null;
         }
-        return { ...prev, player: { ...prev.player, inventory: nextInv }, message: 'FIRING_SEQUENCE', messageTimeout: 0.5 };
+        return { ...prev, player: { ...prev.player, inventory: nextInv }, message: '武器开火', messageTimeout: 0.5 };
       });
 
       newEntities = newEntities.map(e => {
@@ -292,7 +300,7 @@ const App: React.FC = () => {
               if (prev.player.equippedLeftId === knife.id) prev.player.equippedLeftId = null;
               if (prev.player.equippedRightId === knife.id) prev.player.equippedRightId = null;
             }
-            return { ...prev, player: { ...prev.player, inventory: nextInv }, message: 'MELEE_ENGAGED', messageTimeout: 0.5 };
+            return { ...prev, player: { ...prev.player, inventory: nextInv }, message: '近战格斗', messageTimeout: 0.5 };
           });
 
           newEntities = newEntities.map(e => {
@@ -617,7 +625,7 @@ const App: React.FC = () => {
         activeChestId,
         isGameOver: player.health <= 0,
         isVictory,
-        deathReason: player.health <= 0 ? "VITAL_SYSTEM_FAILURE" : ""
+        deathReason: player.health <= 0 ? "生命维持系统完全失效" : ""
       };
     });
     frameIdRef.current = requestAnimationFrame(gameLoop);
@@ -927,13 +935,13 @@ const App: React.FC = () => {
     return (
       <div className="w-screen h-screen bg-black flex flex-col items-center justify-center p-10 font-mono text-zinc-100">
         <div className="absolute inset-0 bg-blue-900/5 pointer-events-none" />
-        <h1 className="text-7xl font-black tracking-widest mb-2 animate-pulse text-zinc-50">VOID_RUNNER</h1>
-        <p className="text-zinc-500 mb-16 tracking-[0.5em] text-[10px] uppercase">Labyrinth Survival Simulation v3.2</p>
+        <h1 className="text-7xl font-black tracking-widest mb-2 animate-pulse text-zinc-50">虚空行者</h1>
+        <p className="text-zinc-500 mb-16 tracking-[0.5em] text-[10px] uppercase">迷宫生存模拟器 v3.2</p>
 
         <div className="flex flex-col gap-6 w-96 relative z-10">
           <button onClick={() => initGame(false)} className="group relative overflow-hidden px-8 py-5 border border-zinc-700 bg-zinc-900/50 hover:bg-zinc-50 hover:text-black transition-all">
             <div className="flex justify-between items-center font-black uppercase tracking-widest text-sm">
-              <span>New Expedition</span>
+              <span>开始新探险</span>
               <span className="opacity-0 group-hover:opacity-100">{'>>'}</span>
             </div>
           </button>
@@ -941,17 +949,17 @@ const App: React.FC = () => {
           {hasSave && (
             <button onClick={() => initGame(true)} className="group relative overflow-hidden px-8 py-5 border-2 border-blue-900 bg-blue-950/20 hover:bg-blue-600 hover:text-white transition-all">
               <div className="flex justify-between items-center font-black uppercase tracking-widest text-sm text-blue-300 group-hover:text-white">
-                <span>Resume Mission</span>
-                <span>(SAVE_FOUND)</span>
+                <span>继续此前任务</span>
+                <span>(发现存档)</span>
               </div>
             </button>
           )}
         </div>
 
         <div className="mt-24 flex gap-12 opacity-20 text-[9px] font-bold uppercase tracking-widest">
-          <div>Grid_Area: {Constants.MAP_SIZE}^2</div>
-          <div>Auth: SECURED</div>
-          <div>Core: STABLE</div>
+          <div>区域大小: {Constants.MAP_SIZE}^2</div>
+          <div>认证: 已安全</div>
+          <div>核心: 稳定</div>
         </div>
       </div>
     );
@@ -989,7 +997,7 @@ const App: React.FC = () => {
         return { ...prev, player: { ...p, inventory: nextInv } };
       });
     } else if (item.type === Types.ItemType.GUN) {
-      setGameState(prev => prev ? { ...prev, message: 'WEAPON_READY', messageTimeout: 0.5 } : null);
+      setGameState(prev => prev ? { ...prev, message: '武器已就绪', messageTimeout: 0.5 } : null);
     }
   };
 
@@ -1071,8 +1079,8 @@ const App: React.FC = () => {
       {showInventory && (
         <div className="absolute inset-0 z-50 bg-black/95 flex flex-col p-6 pt-16 animate-fade-in pointer-events-auto">
           <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
-            <h2 className="text-xl font-bold tracking-widest text-zinc-400">INVENTORY</h2>
-            <button onClick={() => setShowInventory(false)} className="px-4 py-2 border border-zinc-600 rounded text-zinc-400">CLOSE</button>
+            <h2 className="text-xl font-bold tracking-widest text-zinc-400">物资背包</h2>
+            <button onClick={() => setShowInventory(false)} className="px-4 py-2 border border-zinc-600 rounded text-zinc-400">关闭</button>
           </div>
 
           <div className="grid grid-cols-4 gap-4 overflow-y-auto content-start pb-20">
@@ -1124,9 +1132,9 @@ const App: React.FC = () => {
 
           <div className="mt-auto border-t border-zinc-800 pt-4 flex flex-col gap-3">
             <button onClick={() => setGameState(s => s ? { ...s, isPaused: !s.isPaused } : null)} className="w-full py-4 bg-zinc-800 text-zinc-300 font-bold rounded-xl uppercase tracking-widest">
-              {gameState.isPaused ? 'Resume Game' : 'Pause Game'}
+              {gameState.isPaused ? '继续游戏' : '暂停游戏'}
             </button>
-            <button onClick={saveAndExit} className="w-full py-4 bg-red-900/20 border border-red-900/50 text-red-500 font-bold rounded-xl uppercase tracking-widest">SAVE & EXIT</button>
+            <button onClick={saveAndExit} className="w-full py-4 bg-red-900/20 border border-red-900/50 text-red-500 font-bold rounded-xl uppercase tracking-widest">保存并退出</button>
           </div>
         </div>
       )}
@@ -1143,7 +1151,7 @@ const App: React.FC = () => {
 
         {/* LEFT HAND */}
         <button onClick={() => handleSlotAction(eL, 'left')} className={`flex-1 aspect-square bg-zinc-900/90 backdrop-blur-md border-2 ${eL ? 'border-zinc-500' : 'border-zinc-800'} rounded-[1.5rem] flex flex-col items-center justify-center relative active:scale-95 transition-all shadow-lg`}>
-          <div className="text-[9px] absolute top-2 text-zinc-500 font-bold tracking-widest uppercase">Left</div>
+          <div className="text-[9px] absolute top-2 text-zinc-500 font-bold tracking-widest uppercase">左手</div>
           {eL ? (
             <>
               <div className="text-4xl pb-2">{ITEM_ICONS[eL.type]}</div>
@@ -1163,7 +1171,7 @@ const App: React.FC = () => {
 
         {/* POCKET */}
         <button onClick={() => handleSlotAction(eP, 'pocket')} className={`flex-1 aspect-square bg-zinc-900/90 backdrop-blur-md border-2 ${eP ? 'border-blue-500/50' : 'border-zinc-800'} rounded-[1.5rem] flex flex-col items-center justify-center relative active:scale-95 transition-all shadow-lg`}>
-          <div className="text-[9px] absolute top-2 text-zinc-500 font-bold tracking-widest uppercase">Pocket</div>
+          <div className="text-[9px] absolute top-2 text-zinc-500 font-bold tracking-widest uppercase">储备口袋</div>
           {eP ? (
             <>
               <div className="text-4xl pb-2">{ITEM_ICONS[eP.type]}</div>
@@ -1181,7 +1189,7 @@ const App: React.FC = () => {
 
         {/* RIGHT HAND */}
         <button onClick={() => handleSlotAction(eR, 'right')} className={`flex-1 aspect-square bg-red-950/20 backdrop-blur-md border-2 ${eR ? 'border-red-600' : 'border-red-900/30'} rounded-[1.5rem] flex flex-col items-center justify-center relative active:scale-95 transition-all shadow-lg`}>
-          <div className="text-[9px] absolute top-2 text-red-500/50 font-bold tracking-widest uppercase">Attack</div>
+          <div className="text-[9px] absolute top-2 text-red-500/50 font-bold tracking-widest uppercase">战备位</div>
           {eR ? (
             <>
               <div className="text-4xl pb-2">{ITEM_ICONS[eR.type]}</div>
@@ -1206,7 +1214,7 @@ const App: React.FC = () => {
         <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-center justify-center pointer-events-auto p-4">
           <div className="bg-zinc-900 border border-yellow-700/50 p-6 rounded-3xl w-full max-w-sm shadow-2xl flex flex-col max-h-[70vh]">
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-yellow-500 font-bold uppercase tracking-widest text-lg">Chest Content</h2>
+              <h2 className="text-yellow-500 font-bold uppercase tracking-widest text-lg">补给箱物品</h2>
               <button className="text-[10px] items-center justify-center bg-yellow-900/20 text-yellow-500 border border-yellow-700/50 px-3 py-1 rounded-full uppercase font-bold tracking-wider active:scale-95" onClick={() => {
                 // LOOT ALL
                 setGameState(s => {
@@ -1222,7 +1230,7 @@ const App: React.FC = () => {
                   chest.data.items = [];
                   return { ...s, player: p, activeChestId: null };
                 });
-              }}>Loot All</button>
+              }}>全部提取</button>
             </div>
 
             <div className="grid grid-cols-4 gap-3 mb-4 overflow-y-auto p-2">
@@ -1250,36 +1258,36 @@ const App: React.FC = () => {
                 </button>
               ))}
             </div>
-            <button onClick={() => setGameState(s => s ? { ...s, activeChestId: null } : null)} className="mt-auto w-full py-4 bg-zinc-800 rounded-xl text-zinc-400 font-bold uppercase tracking-widest">CLOSE</button>
+            <button onClick={() => setGameState(s => s ? { ...s, activeChestId: null } : null)} className="mt-auto w-full py-4 bg-zinc-800 rounded-xl text-zinc-400 font-bold uppercase tracking-widest">关闭</button>
           </div>
         </div>
       )}
 
       {gameState.isPaused && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-lg flex flex-col items-center justify-center z-[100]">
-          <h2 className="text-4xl font-black text-white tracking-[0.5em] mb-12 animate-pulse">PAUSED</h2>
-          <button onClick={() => setGameState(s => s ? { ...s, isPaused: false } : null)} className="px-12 py-4 bg-white text-black font-black uppercase tracking-[0.2em] rounded-full active:scale-95 transition-transform">RESUME</button>
+          <h2 className="text-4xl font-black text-white tracking-[0.5em] mb-12 animate-pulse">暂停</h2>
+          <button onClick={() => setGameState(s => s ? { ...s, isPaused: false } : null)} className="px-12 py-4 bg-white text-black font-black uppercase tracking-[0.2em] rounded-full active:scale-95 transition-transform">继续</button>
         </div>
       )}
 
       {gameState.isGameOver && (
         <div className="fixed inset-0 bg-black z-[99999] flex flex-col items-center justify-center text-center p-10">
-          <h1 className="text-8xl font-black text-red-600 mb-4 flicker uppercase leading-none tracking-tighter">DIED</h1>
+          <h1 className="text-8xl font-black text-red-600 mb-4 flicker uppercase leading-none tracking-tighter">已牺牲</h1>
           <p className="text-zinc-500 mb-16 italic text-sm tracking-[0.5em] font-bold uppercase">"{gameState.deathReason}"</p>
-          <button onClick={returnToMenu} className="px-12 py-4 bg-zinc-800 border border-zinc-700 text-white text-xs hover:bg-zinc-700 transition-all uppercase font-black tracking-[0.3em] rounded-lg active:scale-95">RESTART MISSION</button>
+          <button onClick={returnToMenu} className="px-12 py-4 bg-zinc-800 border border-zinc-700 text-white text-xs hover:bg-zinc-700 transition-all uppercase font-black tracking-[0.3em] rounded-lg active:scale-95">重启任务</button>
         </div>
       )}
 
       {gameState.isVictory && (
         <div className="fixed inset-0 bg-zinc-950 z-[99999] flex flex-col items-center justify-center text-center p-10 animate-fade-in">
           <div className="absolute inset-0 bg-blue-500/10 pointer-events-none" />
-          <h1 className="text-8xl font-black text-cyan-400 mb-4 animate-pulse uppercase leading-none tracking-tighter drop-shadow-[0_0_20px_rgba(34,211,238,0.5)]">EVACUATED</h1>
-          <p className="text-zinc-500 mb-16 italic text-sm tracking-[0.5em] font-bold uppercase">"CORE_SYSTEM_SECURED // EXPEDITION_SUCCESS"</p>
+          <h1 className="text-8xl font-black text-cyan-400 mb-4 animate-pulse uppercase leading-none tracking-tighter drop-shadow-[0_0_20px_rgba(34,211,238,0.5)]">成功撤离</h1>
+          <p className="text-zinc-500 mb-16 italic text-sm tracking-[0.5em] font-bold uppercase">"核心系统已受控 // 任务圆满成功"</p>
           <div className="bg-zinc-900/50 border border-zinc-800 p-8 rounded-2xl mb-12 w-full max-w-sm">
-            <div className="text-zinc-500 text-[10px] uppercase tracking-widest mb-2 font-bold">Mission Time</div>
-            <div className="text-4xl text-white font-mono">{Math.floor(gameState.survivalTime)} SECONDS</div>
+            <div className="text-zinc-500 text-[10px] uppercase tracking-widest mb-2 font-bold">生存时长</div>
+            <div className="text-4xl text-white font-mono">{Math.floor(gameState.survivalTime)} 秒</div>
           </div>
-          <button onClick={returnToMenu} className="px-12 py-5 bg-cyan-600 border border-cyan-400 text-white hover:bg-cyan-500 transition-all uppercase font-black tracking-[0.3em] rounded-xl active:scale-95 shadow-lg shadow-cyan-900/40">RETURN TO HUB</button>
+          <button onClick={returnToMenu} className="px-12 py-5 bg-cyan-600 border border-cyan-400 text-white hover:bg-cyan-500 transition-all uppercase font-black tracking-[0.3em] rounded-xl active:scale-95 shadow-lg shadow-cyan-900/40">返回主基地</button>
         </div>
       )}
 
