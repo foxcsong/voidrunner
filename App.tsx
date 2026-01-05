@@ -14,6 +14,17 @@ const ITEM_ICONS: Record<Types.ItemType, string> = {
 
 const SAVE_KEY = 'void_labyrinth_save';
 
+interface Particle {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  maxLife: number;
+  size: number;
+}
+
 const isLineOfSightClear = (x1: number, y1: number, x2: number, y2: number, map: number[][]) => {
   const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
   const steps = Math.min(dist * 10, 50);
@@ -63,10 +74,17 @@ const App: React.FC = () => {
   const lastTimeRef = useRef<number>(performance.now());
   const lastShotTimeRef = useRef<number>(0);
   const frameIdRef = useRef<number>(0);
+  const playerImgRef = useRef<HTMLImageElement | null>(null);
+  const particlesRef = useRef<Particle[]>([]);
+  const nextParticleIdRef = useRef(0);
 
   useEffect(() => {
     const save = localStorage.getItem(SAVE_KEY);
     setHasSave(!!save);
+
+    const img = new Image();
+    img.src = '/assets/player.png';
+    img.onload = () => { playerImgRef.current = img; };
   }, [screen]);
 
   const initGame = useCallback((loadExisting = false) => {
@@ -79,7 +97,7 @@ const App: React.FC = () => {
       }
     }
 
-    localStorage.removeItem(SAVE_KEY); 
+    localStorage.removeItem(SAVE_KEY);
     const map = MazeGen.generateMaze(Constants.MAP_SIZE);
     const deadEnds = MazeGen.findDeadEnds(map);
     const entities: Types.Entity[] = [];
@@ -104,8 +122,8 @@ const App: React.FC = () => {
       }
       entities.push({
         id: `e-${i}`, x: pos.x, y: pos.y, type, health: 75,
-        data: type === Types.EntityType.CHEST ? { items, isOpen: false } : { 
-          nextTarget: null, lastPathUpdate: 0, spawnX: pos.x, spawnY: pos.y, state: 'IDLE' 
+        data: type === Types.EntityType.CHEST ? { items, isOpen: false } : {
+          nextTarget: null, lastPathUpdate: 0, spawnX: pos.x, spawnY: pos.y, state: 'IDLE'
         }
       });
     });
@@ -129,9 +147,19 @@ const App: React.FC = () => {
     const delta = Math.min((time - lastTimeRef.current) / 1000, 0.05);
     lastTimeRef.current = time;
 
+    // Update Particles
+    particlesRef.current = particlesRef.current
+      .map(p => ({
+        ...p,
+        x: p.x + p.vx * delta,
+        y: p.y + p.vy * delta,
+        life: p.life - delta
+      }))
+      .filter(p => p.life > 0);
+
     setGameState(prev => {
       if (!prev || prev.isGameOver || prev.isPaused) return prev;
-      
+
       const nextSurvivalTime = prev.survivalTime + delta;
       let nextMessageTimeout = prev.messageTimeout > 0 ? prev.messageTimeout - delta : 0;
       let nextMessage = nextMessageTimeout <= 0 ? '' : prev.message;
@@ -139,13 +167,29 @@ const App: React.FC = () => {
       const player = { ...prev.player };
       player.sprinting = !!keysRef.current['ShiftLeft'] && player.hydration > 10;
       const speed = (player.sprinting ? 6.2 : 3.8) * delta;
-      
+
       let dx = 0, dy = 0;
       if (keysRef.current['KeyW'] || keysRef.current['ArrowUp']) dy -= speed;
       if (keysRef.current['KeyS'] || keysRef.current['ArrowDown']) dy += speed;
       if (keysRef.current['KeyA'] || keysRef.current['ArrowLeft']) dx -= speed;
       if (keysRef.current['KeyD'] || keysRef.current['ArrowRight']) dx += speed;
-      if (dx !== 0 || dy !== 0) player.dir = Math.atan2(dy, dx);
+      if (dx !== 0 || dy !== 0) {
+        player.dir = Math.atan2(dy, dx);
+
+        // Emit Particles
+        if (Math.random() > 0.7) {
+          particlesRef.current.push({
+            id: nextParticleIdRef.current++,
+            x: player.x + (Math.random() - 0.5) * 0.2,
+            y: player.y + 0.3 + (Math.random() - 0.5) * 0.1,
+            vx: -dx * 0.5 + (Math.random() - 0.5) * 0.5,
+            vy: -dy * 0.5 + (Math.random() - 0.5) * 0.5,
+            life: 0.5 + Math.random() * 0.5,
+            maxLife: 1.0,
+            size: 2 + Math.random() * 4
+          });
+        }
+      }
 
       const r = 0.2, bodyR = 0.45;
       const nx = player.x + dx, ny = player.y + dy;
@@ -175,9 +219,9 @@ const App: React.FC = () => {
 
       const hasFl = player.inventory.find(i => i.id === player.equippedLeftId || i.id === player.equippedRightId)?.type === Types.ItemType.FLASHLIGHT;
       if (player.isFlashlightOn && hasFl) {
-         const it = player.inventory.find(i => i.type === Types.ItemType.FLASHLIGHT && (i.id === player.equippedLeftId || i.id === player.equippedRightId));
-         if (it && it.durability! > 0) it.durability! -= 0.5 * delta;
-         else player.isFlashlightOn = false;
+        const it = player.inventory.find(i => i.type === Types.ItemType.FLASHLIGHT && (i.id === player.equippedLeftId || i.id === player.equippedRightId));
+        if (it && it.durability! > 0) it.durability! -= 0.5 * delta;
+        else player.isFlashlightOn = false;
       } else {
         player.isFlashlightOn = false;
       }
@@ -186,7 +230,7 @@ const App: React.FC = () => {
         if (e.type !== Types.EntityType.MONSTER || e.health! <= 0) return e;
         const dP = Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2);
         const nextE = { ...e, data: { ...e.data } };
-        
+
         if (nextE.data.state === 'IDLE') {
           if (dP < 6.0) nextE.data.state = 'CHASING';
         } else if (nextE.data.state === 'CHASING') {
@@ -200,14 +244,14 @@ const App: React.FC = () => {
           }
         } else if (nextE.data.state === 'RETURNING') {
           if (dP < 4.5) nextE.data.state = 'CHASING';
-          else if (Math.sqrt((nextE.x - nextE.data.spawnX)**2 + (nextE.y - nextE.data.spawnY)**2) < 0.2) { 
-            nextE.data.state = 'IDLE'; nextE.data.nextTarget = null; 
+          else if (Math.sqrt((nextE.x - nextE.data.spawnX) ** 2 + (nextE.y - nextE.data.spawnY) ** 2) < 0.2) {
+            nextE.data.state = 'IDLE'; nextE.data.nextTarget = null;
           } else {
-             if (time - nextE.data.lastPathUpdate > 1000 || !nextE.data.nextTarget) {
-                const step = getNextPathStep(nextE.x, nextE.y, nextE.data.spawnX, nextE.data.spawnY, prev.map);
-                if (step) nextE.data.nextTarget = { x: step[0] + 0.5, y: step[1] + 0.5 };
-                nextE.data.lastPathUpdate = time;
-             }
+            if (time - nextE.data.lastPathUpdate > 1000 || !nextE.data.nextTarget) {
+              const step = getNextPathStep(nextE.x, nextE.y, nextE.data.spawnX, nextE.data.spawnY, prev.map);
+              if (step) nextE.data.nextTarget = { x: step[0] + 0.5, y: step[1] + 0.5 };
+              nextE.data.lastPathUpdate = time;
+            }
           }
         }
 
@@ -234,7 +278,7 @@ const App: React.FC = () => {
           player.inventory = player.inventory.map(i =>
             i.id === gunId ? { ...i, count: (i.count || 0) - 1 } : i
           );
-          
+
           // Damage calculation
           nextEntities = nextEntities.map(e => {
             if (e.type === Types.EntityType.MONSTER && e.health! > 0) {
@@ -254,19 +298,19 @@ const App: React.FC = () => {
             return item && item.type === Types.ItemType.KNIFE && item.durability! > 0;
           });
           if (knifeId) {
-             lastShotTimeRef.current = time;
-             player.inventory = player.inventory.map(i =>
-                i.id === knifeId ? { ...i, durability: (i.durability || 0) - 2 } : i
-             );
-             nextEntities = nextEntities.map(e => {
-                if (e.type === Types.EntityType.MONSTER && e.health! > 0) {
-                  const dist = Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2);
-                  if (dist < 2.0) return { ...e, health: e.health! - 25 };
-                }
-                return e;
-             });
-             nextMessage = "MELEE_STRIKE";
-             nextMessageTimeout = 1.0;
+            lastShotTimeRef.current = time;
+            player.inventory = player.inventory.map(i =>
+              i.id === knifeId ? { ...i, durability: (i.durability || 0) - 2 } : i
+            );
+            nextEntities = nextEntities.map(e => {
+              if (e.type === Types.EntityType.MONSTER && e.health! > 0) {
+                const dist = Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2);
+                if (dist < 2.0) return { ...e, health: e.health! - 25 };
+              }
+              return e;
+            });
+            nextMessage = "MELEE_STRIKE";
+            nextMessageTimeout = 1.0;
           }
         }
       }
@@ -274,8 +318,8 @@ const App: React.FC = () => {
       let activeChestId = prev.activeChestId;
       if (keysRef.current['KeyE']) {
         const nearChest = prev.entities.find(e => e.type === Types.EntityType.CHEST && Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2) < 1.6);
-        if (nearChest) { 
-          activeChestId = nearChest.id; 
+        if (nearChest) {
+          activeChestId = nearChest.id;
           const chestIndex = nextEntities.findIndex(ce => ce.id === nearChest.id);
           if (chestIndex !== -1) nextEntities[chestIndex].data.isOpen = true;
         }
@@ -337,11 +381,11 @@ const App: React.FC = () => {
     const rangeX = 20; const rangeY = 15;
     for (let y = Math.floor(player.y - rangeY); y < player.y + rangeY; y++) {
       for (let x = Math.floor(player.x - rangeX); x < player.x + rangeX; x++) {
-        if (map[y]?.[x] === 1) { 
-          ctx.fillStyle = '#16141a'; ctx.fillRect(x * s, y * s, s, s); 
-          ctx.strokeStyle = '#25232d'; ctx.lineWidth = 1; ctx.strokeRect(x*s+1, y*s+1, s-2, s-2);
+        if (map[y]?.[x] === 1) {
+          ctx.fillStyle = '#16141a'; ctx.fillRect(x * s, y * s, s, s);
+          ctx.strokeStyle = '#25232d'; ctx.lineWidth = 1; ctx.strokeRect(x * s + 1, y * s + 1, s - 2, s - 2);
         } else if (map[y]?.[x] === 0) {
-          ctx.strokeStyle = '#08060f'; ctx.strokeRect(x*s, y*s, s, s);
+          ctx.strokeStyle = '#08060f'; ctx.strokeRect(x * s, y * s, s, s);
         }
       }
     }
@@ -350,36 +394,59 @@ const App: React.FC = () => {
       if (Math.abs(e.x - player.x) > rangeX || Math.abs(e.y - player.y) > rangeY) return;
       if (!e.type || (e.type === Types.EntityType.MONSTER && e.health! <= 0)) return;
       if (e.type === Types.EntityType.CHEST) {
-          ctx.fillStyle = e.data.isOpen ? '#3a2601' : '#a16207';
-          ctx.fillRect(e.x * s - 14, e.y * s - 14, 28, 28);
-          ctx.strokeStyle = '#000'; ctx.strokeRect(e.x * s - 14, e.y * s - 14, 28, 28);
+        ctx.fillStyle = e.data.isOpen ? '#3a2601' : '#a16207';
+        ctx.fillRect(e.x * s - 14, e.y * s - 14, 28, 28);
+        ctx.strokeStyle = '#000'; ctx.strokeRect(e.x * s - 14, e.y * s - 14, 28, 28);
       } else {
-          ctx.fillStyle = '#7f1d1d'; ctx.beginPath(); ctx.arc(e.x * s, e.y * s, 15, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#7f1d1d'; ctx.beginPath(); ctx.arc(e.x * s, e.y * s, 15, 0, Math.PI * 2); ctx.fill();
       }
     });
     ctx.restore();
 
+    // PARTICLES
+    particlesRef.current.forEach(p => {
+      const opacity = p.life / p.maxLife;
+      ctx.fillStyle = `rgba(150, 140, 130, ${opacity * 0.4})`;
+      ctx.beginPath();
+      ctx.arc(ww / 2 + (p.x - player.x) * s, wh / 2 + (p.y - player.y) * s, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
     // PLAYER
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ww/2, wh/2, 12, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 3; ctx.stroke();
+    const isMoving = !!(keysRef.current['KeyW'] || keysRef.current['KeyS'] || keysRef.current['KeyA'] || keysRef.current['KeyD'] || keysRef.current['ArrowUp'] || keysRef.current['ArrowDown'] || keysRef.current['ArrowLeft'] || keysRef.current['ArrowRight']);
+    const bob = isMoving ? Math.sin(performance.now() * 0.015) * 4 : Math.sin(performance.now() * 0.003) * 2;
+    const shake = isMoving ? Math.cos(performance.now() * 0.015) * 0.05 : 0;
+
+    if (playerImgRef.current) {
+      ctx.save();
+      ctx.translate(ww / 2, wh / 2 + bob);
+      ctx.rotate(shake);
+      // Draw sprite (approx 48x48 pixels)
+      const pw = 48, ph = 48;
+      ctx.drawImage(playerImgRef.current, -pw / 2, -ph / 2, pw, ph);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ww / 2, wh / 2, 12, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 3; ctx.stroke();
+    }
 
     // DYNAMIC VISION MASK
     const visionCanvas = document.createElement('canvas');
     visionCanvas.width = ww; visionCanvas.height = wh;
     const vctx = visionCanvas.getContext('2d')!;
-    
+
     vctx.fillStyle = '#000'; vctx.fillRect(0, 0, ww, wh);
     vctx.globalCompositeOperation = 'destination-out';
-    
+
     // Vision radius restored to 120 pixels (base) or 450 (flashlight)
-    const visionRadius = player.isFlashlightOn ? 450 : 120; 
-    const grad = vctx.createRadialGradient(ww/2, wh/2, 0, ww/2, wh/2, visionRadius);
+    const visionRadius = player.isFlashlightOn ? 450 : 120;
+    const grad = vctx.createRadialGradient(ww / 2, wh / 2, 0, ww / 2, wh / 2, visionRadius);
     grad.addColorStop(0, 'rgba(255,255,255,1)');
     grad.addColorStop(0.6, 'rgba(255,255,255,0.4)');
     grad.addColorStop(1, 'rgba(255,255,255,0)');
     vctx.fillStyle = grad;
-    vctx.fillRect(ww/2 - visionRadius, wh/2 - visionRadius, visionRadius*2, visionRadius*2);
-    
+    vctx.fillRect(ww / 2 - visionRadius, wh / 2 - visionRadius, visionRadius * 2, visionRadius * 2);
+
     ctx.drawImage(visionCanvas, 0, 0);
 
     if (player.isFlashlightOn) {
@@ -435,29 +502,29 @@ const App: React.FC = () => {
         <div className="absolute inset-0 bg-blue-900/5 pointer-events-none" />
         <h1 className="text-7xl font-black tracking-widest mb-2 animate-pulse text-zinc-50">VOID_RUNNER</h1>
         <p className="text-zinc-500 mb-16 tracking-[0.5em] text-[10px] uppercase">Labyrinth Survival Simulation v3.2</p>
-        
+
         <div className="flex flex-col gap-6 w-96 relative z-10">
-            <button onClick={() => initGame(false)} className="group relative overflow-hidden px-8 py-5 border border-zinc-700 bg-zinc-900/50 hover:bg-zinc-50 hover:text-black transition-all">
-                <div className="flex justify-between items-center font-black uppercase tracking-widest text-sm">
-                   <span>New Expedition</span>
-                   <span className="opacity-0 group-hover:opacity-100">{'>>'}</span>
-                </div>
+          <button onClick={() => initGame(false)} className="group relative overflow-hidden px-8 py-5 border border-zinc-700 bg-zinc-900/50 hover:bg-zinc-50 hover:text-black transition-all">
+            <div className="flex justify-between items-center font-black uppercase tracking-widest text-sm">
+              <span>New Expedition</span>
+              <span className="opacity-0 group-hover:opacity-100">{'>>'}</span>
+            </div>
+          </button>
+
+          {hasSave && (
+            <button onClick={() => initGame(true)} className="group relative overflow-hidden px-8 py-5 border-2 border-blue-900 bg-blue-950/20 hover:bg-blue-600 hover:text-white transition-all">
+              <div className="flex justify-between items-center font-black uppercase tracking-widest text-sm text-blue-300 group-hover:text-white">
+                <span>Resume Mission</span>
+                <span>(SAVE_FOUND)</span>
+              </div>
             </button>
-            
-            {hasSave && (
-                <button onClick={() => initGame(true)} className="group relative overflow-hidden px-8 py-5 border-2 border-blue-900 bg-blue-950/20 hover:bg-blue-600 hover:text-white transition-all">
-                    <div className="flex justify-between items-center font-black uppercase tracking-widest text-sm text-blue-300 group-hover:text-white">
-                       <span>Resume Mission</span>
-                       <span>(SAVE_FOUND)</span>
-                    </div>
-                </button>
-            )}
+          )}
         </div>
-        
+
         <div className="mt-24 flex gap-12 opacity-20 text-[9px] font-bold uppercase tracking-widest">
-            <div>Grid_Area: {Constants.MAP_SIZE}^2</div>
-            <div>Auth: SECURED</div>
-            <div>Core: STABLE</div>
+          <div>Grid_Area: {Constants.MAP_SIZE}^2</div>
+          <div>Auth: SECURED</div>
+          <div>Core: STABLE</div>
         </div>
       </div>
     );
@@ -485,12 +552,12 @@ const App: React.FC = () => {
           ))}
         </div>
         <div className="mt-8 pt-4 border-t border-zinc-900 flex flex-col gap-3">
-            <button onClick={() => setGameState(s => s ? { ...s, isPaused: !s.isPaused } : null)} className={`py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${gameState.isPaused ? 'bg-zinc-100 text-black' : 'bg-zinc-900 hover:bg-zinc-800'}`}>
-                {gameState.isPaused ? 'Resume' : 'Pause'}
-            </button>
-            <button onClick={saveAndExit} className="py-2 bg-blue-900/20 text-blue-400 border border-blue-900/30 text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-blue-600 hover:text-white transition-all">
-                Save & Exit
-            </button>
+          <button onClick={() => setGameState(s => s ? { ...s, isPaused: !s.isPaused } : null)} className={`py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${gameState.isPaused ? 'bg-zinc-100 text-black' : 'bg-zinc-900 hover:bg-zinc-800'}`}>
+            {gameState.isPaused ? 'Resume' : 'Pause'}
+          </button>
+          <button onClick={saveAndExit} className="py-2 bg-blue-900/20 text-blue-400 border border-blue-900/30 text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-blue-600 hover:text-white transition-all">
+            Save & Exit
+          </button>
         </div>
       </div>
 
@@ -552,8 +619,8 @@ const App: React.FC = () => {
 
       {gameState.isPaused && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-lg flex flex-col items-center justify-center z-[100]">
-            <h2 className="text-5xl font-black text-white tracking-[1em] mb-12 animate-pulse">SUSPENDED</h2>
-            <button onClick={() => setGameState(s => s ? { ...s, isPaused: false } : null)} className="px-16 py-5 bg-white text-black font-black uppercase tracking-[0.3em] hover:scale-110 transition-transform rounded-full">Restore Link</button>
+          <h2 className="text-5xl font-black text-white tracking-[1em] mb-12 animate-pulse">SUSPENDED</h2>
+          <button onClick={() => setGameState(s => s ? { ...s, isPaused: false } : null)} className="px-16 py-5 bg-white text-black font-black uppercase tracking-[0.3em] hover:scale-110 transition-transform rounded-full">Restore Link</button>
         </div>
       )}
 
