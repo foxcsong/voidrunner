@@ -234,6 +234,16 @@ const App: React.FC = () => {
     let attackMade = false;
     let newEntities = [...gameState.entities];
 
+    // CHECK CHEST INTERACTION FIRST
+    const targetChest = newEntities.find(e => e.type === Types.EntityType.CHEST && Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2) < 0.8);
+    if (targetChest) {
+      const distToPlayer = Math.sqrt((targetChest.x - player.x) ** 2 + (targetChest.y - player.y) ** 2);
+      if (distToPlayer < 1.5) {
+        setGameState(prev => prev ? { ...prev, activeChestId: targetChest.id } : null);
+        return; // Exit if opening chest
+      }
+    }
+
     if (gun && (gun.count || 0) > 0) {
       // GUN ATTACK
       attackMade = true;
