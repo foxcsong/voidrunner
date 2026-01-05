@@ -49,6 +49,7 @@ export interface Player {
   inventory: InventoryItem[];
   equippedLeftId: string | null;
   equippedRightId: string | null;
+  equippedPocketId: string | null;
   sprinting: boolean;
 }
 
