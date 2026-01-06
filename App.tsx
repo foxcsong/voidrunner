@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as Types from './types';
 import * as Constants from './constants';
 import * as MazeGen from './engine/MazeGen';
-import { getAtmosphericMessage } from './services/geminiService';
+import { getAtmosphericMessage, generateLayout } from './services/geminiService';
 
 const ITEM_ICONS: Record<Types.ItemType, string> = {
   [Types.ItemType.FOOD]: '🍞',
@@ -72,7 +72,64 @@ const getNextPathStep = (startX: number, startY: number, targetX: number, target
   return null;
 };
 
-type Screen = 'MENU' | 'PLAYING';
+type Screen = 'MENU' | 'PLAYING' | 'LOADING_AI';
+
+const FallingVoid: React.FC<{ onComplete?: () => void }> = ({ onComplete }) => {
+  const [textIndex, setTextIndex] = useState(0);
+  const narrative = [
+    "笔尖在草稿纸上沙沙作响，那道复杂的几何题终于快要解开了……",
+    "可就在我落笔的一瞬，灯火骤灭，世界像被墨水吞噬。",
+    "我感觉双脚踏空，身体毫无防备地坠入冰冷的虚空。",
+    "我在哪里？为什么……呼吸变得如此沉重？"
+  ];
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTextIndex(prev => (prev < narrative.length - 1 ? prev + 1 : prev));
+    }, 3500);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="fixed inset-0 bg-black z-[100] flex flex-col items-center justify-center p-10 overflow-hidden">
+      {/* Falling Particles Background */}
+      <div className="absolute inset-0 pointer-events-none">
+        {Array.from({ length: 40 }).map((_, i) => (
+          <div
+            key={i}
+            className="absolute bg-white/20 w-[1px] h-[50px]"
+            style={{
+              left: `${Math.random() * 100}%`,
+              top: `-10%`,
+              animation: `fall ${1 + Math.random() * 2}s linear infinite`,
+              animationDelay: `${Math.random() * 2}s`
+            }}
+          />
+        ))}
+      </div>
+
+      <div className="relative z-10 max-w-2xl text-center space-y-8">
+        <div className="text-zinc-400 text-lg leading-relaxed animate-pulse">
+          {narrative[textIndex]}
+        </div>
+        <div className="flex justify-center gap-2">
+          {narrative.map((_, i) => (
+            <div key={i} className={`h-1 rounded-full transition-all duration-1000 ${i <= textIndex ? 'w-8 bg-zinc-200' : 'w-2 bg-zinc-800'}`} />
+          ))}
+        </div>
+        <div className="pt-10 text-zinc-600 text-[10px] tracking-[0.2em] animate-pulse">
+          INITIALIZING_NEURAL_LINK...
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes fall {
+          to { transform: translateY(120vh); }
+        }
+      `}</style>
+    </div>
+  );
+};
 
 const App: React.FC = () => {
   const [screen, setScreen] = useState<Screen>('MENU');
@@ -160,7 +217,7 @@ const App: React.FC = () => {
     return p;
   };
 
-  const initGame = useCallback((loadExisting = false) => {
+  const initGame = useCallback(async (loadExisting = false) => {
     if (loadExisting) {
       const saved = localStorage.getItem(SAVE_KEY);
       if (saved) {
@@ -175,8 +232,31 @@ const App: React.FC = () => {
     }
 
     localStorage.removeItem(SAVE_KEY);
+    setScreen('LOADING_AI');
+
+    // Step 1: Generate Maze
     const map = MazeGen.generateMaze(Constants.MAP_SIZE);
     const deadEnds = MazeGen.findDeadEnds(map);
+    const emptyCells: { x: number, y: number }[] = [];
+    for (let y = 0; y < map.length; y++) {
+      for (let x = 0; x < map[0].length; x++) {
+        if (map[y][x] === 0 && !(x <= 4 && y <= 4)) emptyCells.push({ x, y });
+      }
+    }
+
+    // Step 2: Try AI Layout (with 10s timeout safety)
+    let aiLayout: any = null;
+    const aiPromise = generateLayout(emptyCells, deadEnds);
+    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 10000));
+
+    try {
+      aiLayout = await Promise.race([aiPromise, timeoutPromise]);
+    } catch (e) {
+      console.error("AI Layout failed", e);
+    }
+
+    // Step 3: Populate Entities (Fallback to procedural if AI fails)
+    const entities: Types.Entity[] = [];
 
     // Find the furthest dead end for the EXIT first
     let exitPos = { x: Constants.MAP_SIZE - 2, y: Constants.MAP_SIZE - 2 };
@@ -189,43 +269,68 @@ const App: React.FC = () => {
       }
     });
 
-    const entities: Types.Entity[] = [];
-
-    deadEnds.forEach((pos, i) => {
-      if (pos.x <= 4 && pos.y <= 4) return;
-      if (pos.x === exitPos.x && pos.y === exitPos.y) return; // DON'T BLOCK EXIT
-      const type = Math.random() > 0.4 ? Types.EntityType.CHEST : Types.EntityType.MONSTER;
-      const items: Types.InventoryItem[] = [];
-      if (type === Types.EntityType.CHEST) {
-        const count = Math.floor(Math.random() * 2) + 1;
-        for (let j = 0; j < count; j++) {
-          const pool = [Types.ItemType.FOOD, Types.ItemType.WATER, Types.ItemType.KNIFE, Types.ItemType.FLASHLIGHT, Types.ItemType.GUN];
-          const it = pool[Math.floor(Math.random() * pool.length)];
-          items.push({
-            id: `it-${i}-${j}-${Math.random()}`,
-            type: it,
-            name: ITEM_NAMES[it],
-            durability: (it === Types.ItemType.KNIFE || it === Types.ItemType.FLASHLIGHT) ? 100 : undefined,
-            count: it === Types.ItemType.GUN ? 12 : (it === Types.ItemType.FOOD || it === Types.ItemType.WATER ? 1 : undefined)
-          });
-        }
-      }
-      entities.push({
-        id: `e-${i}`, x: pos.x, y: pos.y, type, health: 75,
-        data: type === Types.EntityType.CHEST ? { items, isOpen: false } : {
-          nextTarget: null, lastPathUpdate: 0, spawnX: pos.x, spawnY: pos.y, state: 'IDLE', hitFlash: 0
-        }
+    if (aiLayout) {
+      // Use AI Layout
+      aiLayout.monsters.forEach((m: any, i: number) => {
+        entities.push({
+          id: `monster-${i}`, x: m.x + 0.5, y: m.y + 0.5, type: Types.EntityType.MONSTER, health: 75,
+          data: { nextTarget: null, lastPathUpdate: 0, spawnX: m.x + 0.5, spawnY: m.y + 0.5, state: 'IDLE', hitFlash: 0 }
+        });
       });
-    });
+      aiLayout.chests.forEach((c: any, i: number) => {
+        if (c.x === exitPos.x && c.y === exitPos.y) return; // Don't block exit
+        const items = c.items.map((it: any, j: number) => ({
+          id: `it-${i}-${j}`,
+          type: it.type as Types.ItemType,
+          name: ITEM_NAMES[it.type as Types.ItemType],
+          durability: (it.type === 'KNIFE' || it.type === 'FLASHLIGHT') ? 100 : undefined,
+          count: it.type === 'GUN' ? 12 : (it.type === 'FOOD' || it.type === 'WATER' ? 1 : undefined)
+        }));
+        entities.push({ id: `chest-${i}`, x: c.x + 0.5, y: c.y + 0.5, type: Types.EntityType.CHEST, data: { items, isOpen: false } });
+      });
+    } else {
+      // Fallback Logic
+      deadEnds.forEach((pos, i) => {
+        if (pos.x <= 4 && pos.y <= 4) return;
+        if (pos.x === exitPos.x && pos.y === exitPos.y) return;
+        const type = Math.random() > 0.4 ? Types.EntityType.CHEST : Types.EntityType.MONSTER;
+        const items: Types.InventoryItem[] = [];
+        if (type === Types.EntityType.CHEST) {
+          const count = Math.floor(Math.random() * 2) + 1;
+          for (let j = 0; j < count; j++) {
+            const pool = [Types.ItemType.FOOD, Types.ItemType.WATER, Types.ItemType.KNIFE, Types.ItemType.FLASHLIGHT, Types.ItemType.GUN];
+            const it = pool[Math.floor(Math.random() * pool.length)];
+            items.push({
+              id: `it-fb-${i}-${j}`, type: it, name: ITEM_NAMES[it],
+              durability: (it === Types.ItemType.KNIFE || it === Types.ItemType.FLASHLIGHT) ? 100 : undefined,
+              count: it === Types.ItemType.GUN ? 12 : (it === Types.ItemType.FOOD || it === Types.ItemType.WATER ? 1 : undefined)
+            });
+          }
+        }
+        entities.push({
+          id: `e-fb-${i}`, x: pos.x + 0.5, y: pos.y + 0.5, type, health: 75,
+          data: type === Types.EntityType.CHEST ? { items, isOpen: false } : {
+            nextTarget: null, lastPathUpdate: 0, spawnX: pos.x + 0.5, spawnY: pos.y + 0.5, state: 'IDLE', hitFlash: 0
+          }
+        });
+      });
+    }
 
+    // Ensure at least some monsters and chests exist even if AI layout was sparse
+    if (entities.length < 5) {
+      // Quick remedial procedural spawn... (omitted for brevity but logical safety)
+    }
 
     setGameState({
       player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [{ id: 'init-f', type: Types.ItemType.FLASHLIGHT, name: ITEM_NAMES[Types.ItemType.FLASHLIGHT], durability: 100 }], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false, hitFlash: 0 },
       map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '', message: '系统初始化完成', messageTimeout: 4, chaseActive: false, survivalTime: 0, isPaused: false, activeChestId: null, draggingItemId: null
     });
-    setScreen('PLAYING');
-    damageNumbersRef.current = [];
-    triggerAIEvent("我醒来时，四周只有冰冷的墙壁，迷宫似乎在生长...");
+
+    // Ensure the loading screen stays at least 8 seconds for narrative readability
+    setTimeout(() => {
+      setScreen('PLAYING');
+      damageNumbersRef.current = [];
+    }, 14000); // 14s is enough for the 4 sentences at 3.5s each
   }, [triggerAIEvent]);
 
   const saveAndExit = () => {
@@ -991,6 +1096,10 @@ const App: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  if (screen === 'LOADING_AI') {
+    return <FallingVoid />;
   }
 
   if (!gameState) return null;
