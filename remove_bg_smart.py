@@ -84,10 +84,8 @@ def smart_remove_bg(img_path, tolerance=40):
         print(f"Error on {img_path}: {e}")
 
 assets = [
-    'public/assets/player.png',
-    'public/assets/monster.png',
-    'public/assets/chest.png',
-    'public/assets/wall_top.png'
+    'public/assets/player_knife.png',
+    'public/assets/player_shoot.png'
 ]
 
 for asset in assets:

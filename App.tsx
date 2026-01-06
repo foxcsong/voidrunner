@@ -126,6 +126,14 @@ const FallingVoid: React.FC<{ onComplete?: () => void }> = ({ onComplete }) => {
         </div>
       </div>
 
+      {/* SKIP BUTTON */}
+      <button
+        onClick={onComplete}
+        className="absolute bottom-10 right-10 text-zinc-600 text-xs uppercase tracking-widest hover:text-white transition-colors border border-zinc-800 px-4 py-2 rounded hover:border-zinc-500"
+      >
+        [ 跳过剧情 ]
+      </button>
+
       <style>{`
         @keyframes fall {
           to { transform: translateY(120vh); }
@@ -145,6 +153,7 @@ const App: React.FC = () => {
   const lastTimeRef = useRef<number>(performance.now());
   const lastShotTimeRef = useRef<number>(0);
   const frameIdRef = useRef<number>(0);
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Asset Refs
   const playerImgRef = useRef<HTMLImageElement | null>(null);
@@ -357,7 +366,7 @@ const App: React.FC = () => {
     });
 
     // Narrative transition
-    setTimeout(() => {
+    loadingTimeoutRef.current = setTimeout(() => {
       setScreen('PLAYING');
       damageNumbersRef.current = [];
     }, 14000);
@@ -1161,7 +1170,11 @@ const App: React.FC = () => {
   }
 
   if (screen === 'LOADING_AI') {
-    return <FallingVoid />;
+    return <FallingVoid onComplete={() => {
+      if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+      setScreen('PLAYING');
+      damageNumbersRef.current = [];
+    }} />;
   }
 
   if (!gameState) return null;
