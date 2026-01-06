@@ -306,12 +306,16 @@ const App: React.FC = () => {
             if (gunSpawned) type = Types.ItemType.AMMO; // Only one gun
             else gunSpawned = true;
           }
+          // Flashlight replacement logic: Only allowed in starter chest
+          if (type === Types.ItemType.FLASHLIGHT) {
+            type = Types.ItemType.BATTERY;
+          }
           return {
             id: `it-${i}-${j}`,
             type: type,
             name: ITEM_NAMES[type],
-            durability: (type === 'KNIFE' || type === 'FLASHLIGHT') ? 100 : undefined,
-            count: type === 'GUN' ? 12 : (type === 'FOOD' || type === 'WATER' || type === 'AMMO' || type === 'BATTERY' ? 1 : undefined)
+            durability: (type === Types.ItemType.KNIFE) ? 100 : undefined,
+            count: type === Types.ItemType.GUN ? 12 : (type === Types.ItemType.FOOD || type === Types.ItemType.WATER || type === Types.ItemType.AMMO || type === Types.ItemType.BATTERY ? 1 : undefined)
           };
         });
         entities.push({ id: `chest-${i}`, x: c.x + 0.5, y: c.y + 0.5, type: Types.EntityType.CHEST, data: { items, isOpen: false } });
@@ -326,7 +330,7 @@ const App: React.FC = () => {
         if (type === Types.EntityType.CHEST) {
           const count = Math.floor(Math.random() * 2) + 1;
           for (let j = 0; j < count; j++) {
-            const pool = [Types.ItemType.FOOD, Types.ItemType.WATER, Types.ItemType.KNIFE, Types.ItemType.FLASHLIGHT, Types.ItemType.GUN, Types.ItemType.AMMO, Types.ItemType.BATTERY];
+            const pool = [Types.ItemType.FOOD, Types.ItemType.WATER, Types.ItemType.KNIFE, Types.ItemType.AMMO, Types.ItemType.BATTERY];
             let it = pool[Math.floor(Math.random() * pool.length)];
             if (it === Types.ItemType.GUN) {
               if (gunSpawned) it = Types.ItemType.AMMO;
@@ -334,7 +338,7 @@ const App: React.FC = () => {
             }
             items.push({
               id: `it-fb-${i}-${j}`, type: it, name: ITEM_NAMES[it],
-              durability: (it === Types.ItemType.KNIFE || it === Types.ItemType.FLASHLIGHT) ? 100 : undefined,
+              durability: (it === Types.ItemType.KNIFE) ? 100 : undefined,
               count: it === Types.ItemType.GUN ? 12 : (it === Types.ItemType.FOOD || it === Types.ItemType.WATER || it === Types.ItemType.AMMO || it === Types.ItemType.BATTERY ? 1 : undefined)
             });
           }
@@ -354,7 +358,7 @@ const App: React.FC = () => {
     }
 
     setGameState({
-      player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [{ id: 'init-f', type: Types.ItemType.FLASHLIGHT, name: ITEM_NAMES[Types.ItemType.FLASHLIGHT], durability: 100 }], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false, hitFlash: 0 },
+      player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false, hitFlash: 0 },
       map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '', message: '发现近处有补给箱，请上前打开获取生存物资。', messageTimeout: 10, chaseActive: false, survivalTime: 0, isPaused: false, activeChestId: null, draggingItemId: null
     });
 
