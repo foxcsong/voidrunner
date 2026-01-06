@@ -609,10 +609,10 @@ const App: React.FC = () => {
         }
 
         // Damage Player Logic - CONTINUOUS CONTACT DAMAGE
-        // Distance check: < 1.0 means "touching" or very close
+        // Distance check: < 1.2 means "touching" or sufficiently close
         const distFinal = Math.sqrt((nextE.x - player.x) ** 2 + (nextE.y - player.y) ** 2);
-        if (distFinal < 1.0 && isLineOfSightClear(player.x, player.y, nextE.x, nextE.y, prev.map)) {
-          player.health -= 40 * delta; // Increased damage rate for danger
+        if (distFinal < 1.2) {
+          player.health -= 40 * delta; // Constant damage while touching
           player.hitFlash = 0.5;
         }
         return nextE;

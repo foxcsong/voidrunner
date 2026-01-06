@@ -1,11 +1,18 @@
 
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({
-  apiKey: (import.meta as any).env.VITE_GEMINI_API_KEY
-});
+const getApiKey = () => {
+  try {
+    return (process.env as any).GEMINI_API_KEY || (import.meta as any).env.VITE_GEMINI_API_KEY || "";
+  } catch {
+    return "";
+  }
+};
+
+const ai = new GoogleGenAI({ apiKey: getApiKey() });
 
 export async function getAtmosphericMessage(event: string) {
+  if (!getApiKey()) return "黑暗在注视着...";
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-1.5-flash',
