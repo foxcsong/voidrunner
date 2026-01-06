@@ -703,11 +703,16 @@ const App: React.FC = () => {
             nextE.data.state = 'RETURNING';
             nextE.data.nextTarget = null;
           } else {
-            // Re-evaluate path to player frequently
-            if (time - nextE.data.lastPathUpdate > 250 || !nextE.data.nextTarget) {
-              const step = getNextPathStep(nextE.x, nextE.y, player.x, player.y, prev.map);
-              if (step) nextE.data.nextTarget = { x: step[0] + 0.5, y: step[1] + 0.5 };
-              nextE.data.lastPathUpdate = time;
+            // DIRECT TRACKING: If close and LOS clear, target player center
+            if (dP < 3.0 && isLineOfSightClear(player.x, player.y, nextE.x, nextE.y, prev.map)) {
+              nextE.data.nextTarget = { x: player.x, y: player.y };
+            } else {
+              // Re-evaluate path to player frequently
+              if (time - nextE.data.lastPathUpdate > 250 || !nextE.data.nextTarget) {
+                const step = getNextPathStep(nextE.x, nextE.y, player.x, player.y, prev.map);
+                if (step) nextE.data.nextTarget = { x: step[0] + 0.5, y: step[1] + 0.5 };
+                nextE.data.lastPathUpdate = time;
+              }
             }
           }
         } else if (nextE.data.state === 'RETURNING') {
@@ -740,16 +745,16 @@ const App: React.FC = () => {
           const nextMy = nextE.y + Math.sin(ang) * ms;
           const distToPlayer = Math.sqrt((nextMx - player.x) ** 2 + (nextMy - player.y) ** 2);
 
-          if (distToPlayer > 0.6) { // Only move if not touching player (0.6 buffer)
+          if (distToPlayer > 0.4) { // Tighter buffer (0.6 -> 0.4) for closer contact
             nextE.x = nextMx;
             nextE.y = nextMy;
           }
         }
 
         // Damage Player Logic - CONTINUOUS CONTACT DAMAGE
-        // Distance check: < 1.4 means "touching" or sufficiently close
+        // Distance check: < 1.5 means "touching" or sufficiently close
         const distFinal = Math.sqrt((nextE.x - player.x) ** 2 + (nextE.y - player.y) ** 2);
-        if (distFinal < 1.4) {
+        if (distFinal < 1.5) {
           player.health -= 40 * delta; // Constant damage while touching
           player.hitFlash = 0.5;
         }
