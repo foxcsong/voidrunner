@@ -4,6 +4,8 @@ import * as Types from './types';
 import * as Constants from './constants';
 import * as MazeGen from './engine/MazeGen';
 import { getAtmosphericMessage, generateLayout } from './services/geminiService';
+import { supabase } from './services/supabase';
+import { AuthForm } from './components/AuthForm';
 
 const ITEM_ICONS: Record<Types.ItemType, string> = {
   [Types.ItemType.FOOD]: '🍞',
@@ -148,6 +150,8 @@ const App: React.FC = () => {
   const [hasSave, setHasSave] = useState(false);
   const [gameState, setGameState] = useState<Types.GameState | null>(null);
   const [showInventory, setShowInventory] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [showAuth, setShowAuth] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keysRef = useRef<Record<string, boolean>>({});
   const lastTimeRef = useRef<number>(performance.now());
@@ -212,6 +216,17 @@ const App: React.FC = () => {
     loadImg('/assets/floor.png', floorImgRef);
     loadImg('/assets/chest_closed.png', chestClosedImgRef);
     loadImg('/assets/chest_open.png', chestOpenImgRef);
+
+    // Check Auth Status
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setCurrentUser(session?.user || null);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setCurrentUser(session?.user || null);
+    });
+
+    return () => subscription.unsubscribe();
   }, [screen]);
 
   // SMART LOOTING LOGIC
@@ -236,13 +251,33 @@ const App: React.FC = () => {
 
   const initGame = useCallback(async (loadExisting = false) => {
     if (loadExisting) {
-      const saved = localStorage.getItem(SAVE_KEY);
-      if (saved) {
-        const state = JSON.parse(saved);
-        state.entities.forEach((e: any) => {
+      let stateToLoad: any = null;
+
+      // 1. Try Cloud Load first if logged in
+      if (currentUser) {
+        const { data, error } = await supabase
+          .from('game_saves')
+          .select('save_data')
+          .eq('user_id', currentUser.id)
+          .single();
+
+        if (data && data.save_data) {
+          stateToLoad = data.save_data;
+          console.log("Loaded save from Cloud");
+        }
+      }
+
+      // 2. Fallback to LocalStorage
+      if (!stateToLoad) {
+        const saved = localStorage.getItem(SAVE_KEY);
+        if (saved) stateToLoad = JSON.parse(saved);
+      }
+
+      if (stateToLoad) {
+        stateToLoad.entities.forEach((e: any) => {
           if (e.data) { e.data.hitFlash = 0; }
         });
-        setGameState(state);
+        setGameState(stateToLoad);
         setScreen('PLAYING');
         return;
       }
@@ -372,9 +407,24 @@ const App: React.FC = () => {
     }, 14000);
   }, [triggerAIEvent]);
 
-  const saveAndExit = () => {
+  const saveAndExit = async () => {
     if (gameState) {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ ...gameState, isPaused: false }));
+      const saveData = { ...gameState, isPaused: false };
+      localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
+
+      // Cloud Save
+      if (currentUser) {
+        const { error } = await supabase
+          .from('game_saves')
+          .upsert({
+            user_id: currentUser.id,
+            save_data: saveData,
+            updated_at: new Date().toISOString()
+          });
+        if (error) console.error("Cloud Save Failed:", error);
+        else console.log("Cloud Save Synced");
+      }
+
       setScreen('MENU');
       setGameState(null);
     }
@@ -1158,6 +1208,24 @@ const App: React.FC = () => {
               </div>
             </button>
           )}
+
+          {/* AUTH BUTTON */}
+          {!currentUser ? (
+            <button onClick={() => setShowAuth(true)} className="group relative overflow-hidden px-8 py-5 border border-zinc-800 bg-black hover:border-yellow-600 transition-all">
+              <div className="flex justify-between items-center font-black uppercase tracking-widest text-xs text-zinc-500 group-hover:text-yellow-500">
+                <span>☁ 连接云端数据库</span>
+                <span>OFFLINE</span>
+              </div>
+            </button>
+          ) : (
+            <div className="relative px-8 py-5 border border-green-900 bg-green-950/10">
+              <div className="flex justify-between items-center font-bold uppercase tracking-widest text-xs text-green-500">
+                <span className="truncate max-w-[200px]">{currentUser.email}</span>
+                <button onClick={() => supabase.auth.signOut()} className="hover:text-white underline">退出</button>
+              </div>
+              <div className="text-[9px] text-green-700 mt-1">云端同步已连接</div>
+            </div>
+          )}
         </div>
 
         <div className="mt-24 flex gap-12 opacity-20 text-[9px] font-bold uppercase tracking-widest">
@@ -1165,6 +1233,13 @@ const App: React.FC = () => {
           <div>认证: 已安全</div>
           <div>核心: 稳定</div>
         </div>
+
+        {showAuth && (
+          <AuthForm
+            onLoginSuccess={() => setShowAuth(false)}
+            onCancel={() => setShowAuth(false)}
+          />
+        )}
       </div>
     );
   }
