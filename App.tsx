@@ -241,25 +241,8 @@ const App: React.FC = () => {
     // Step 1: Generate Maze
     const map = MazeGen.generateMaze(Constants.MAP_SIZE);
     const deadEnds = MazeGen.findDeadEnds(map);
-    const emptyCells: { x: number, y: number }[] = [];
-    for (let y = 0; y < map.length; y++) {
-      for (let x = 0; x < map[0].length; x++) {
-        if (map[y][x] === 0 && !(x <= 4 && y <= 4)) emptyCells.push({ x, y });
-      }
-    }
 
-    // Step 2: Try AI Layout (with 10s timeout safety)
-    let aiLayout: any = null;
-    const aiPromise = generateLayout(emptyCells, deadEnds);
-    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 10000));
-
-    try {
-      aiLayout = await Promise.race([aiPromise, timeoutPromise]);
-    } catch (e) {
-      console.error("AI Layout failed", e);
-    }
-
-    // Step 3: Populate Entities (Fallback to procedural if AI fails)
+    // Step 2: Skip AI Layout, go straight to procedural with improved weighting
     const entities: Types.Entity[] = [];
 
     // Add Starter Chest
@@ -275,7 +258,7 @@ const App: React.FC = () => {
       }
     });
 
-    // Find the furthest dead end for the EXIT first
+    // Find the furthest dead end for the EXIT
     let exitPos = { x: Constants.MAP_SIZE - 2, y: Constants.MAP_SIZE - 2 };
     let maxDist = 0;
     deadEnds.forEach(pos => {
@@ -286,116 +269,82 @@ const App: React.FC = () => {
       }
     });
 
+    // Strategy: Assign one gun to a dead end between 6 and 15 distance
     let gunSpawned = false;
+    const startX = 1.5, startY = 1.5;
 
-    if (aiLayout) {
-      // Ensure one gun exists and is within 5-15 units of start if possible
-      let hasGunInAI = false;
-      let gunChestIdx = -1;
-      aiLayout.chests.forEach((c: any, idx: number) => {
-        if (c.items.some((it: any) => it.type === 'GUN')) {
-          hasGunInAI = true;
-          gunChestIdx = idx;
-        }
-      });
+    // Shuffle deadEnds for random distribution
+    const shuffledDeadEnds = [...deadEnds].sort(() => Math.random() - 0.5);
 
-      const startX = 1.5, startY = 1.5;
-      if (hasGunInAI) {
-        const gc = aiLayout.chests[gunChestIdx];
-        const dist = Math.sqrt((gc.x - startX) ** 2 + (gc.y - startY) ** 2);
-        if (dist > 18) {
-          // Relocate gun to a closer chest
-          const closerIdx = aiLayout.chests.findIndex((c: any) => {
-            const d = Math.sqrt((c.x - startX) ** 2 + (c.y - startY) ** 2);
-            return d > 5 && d < 15;
-          });
-          if (closerIdx !== -1) {
-            // Remove gun from old chest
-            aiLayout.chests[gunChestIdx].items = aiLayout.chests[gunChestIdx].items.filter((it: any) => it.type !== 'GUN');
-            // Add gun to closer chest
-            aiLayout.chests[closerIdx].items.push({ type: 'GUN', count: 12 });
+    shuffledDeadEnds.forEach((pos, i) => {
+      // Avoid start area and exit
+      if (pos.x <= 4 && pos.y <= 4) return;
+      if (pos.x === exitPos.x && pos.y === exitPos.y) return;
+
+      const dist = Math.sqrt((pos.x - startX) ** 2 + (pos.y - startY) ** 2);
+
+      // Determine entity type: Chest or Monster
+      // High probability of chest in dead ends
+      const entityType = Math.random() > 0.3 ? Types.EntityType.CHEST : Types.EntityType.MONSTER;
+      const items: Types.InventoryItem[] = [];
+
+      if (entityType === Types.EntityType.CHEST) {
+        const itemCount = Math.floor(Math.random() * 2) + 1;
+        for (let j = 0; j < itemCount; j++) {
+          let itType = [Types.ItemType.FOOD, Types.ItemType.WATER, Types.ItemType.KNIFE, Types.ItemType.AMMO, Types.ItemType.BATTERY][Math.floor(Math.random() * 5)];
+
+          // Force gun placement
+          if (!gunSpawned && dist >= 6 && dist <= 15) {
+            itType = Types.ItemType.GUN;
+            gunSpawned = true;
           }
+
+          items.push({
+            id: `it-${i}-${j}`,
+            type: itType,
+            name: ITEM_NAMES[itType],
+            durability: (itType === Types.ItemType.KNIFE) ? 100 : undefined,
+            count: itType === Types.ItemType.GUN ? 12 : (itType === Types.ItemType.FOOD || itType === Types.ItemType.WATER || itType === Types.ItemType.AMMO || itType === Types.ItemType.BATTERY ? 1 : undefined)
+          });
         }
-      } else if (aiLayout.chests.length > 0) {
-        // No gun in AI layout, force one into a reasonably close chest
-        const closerIdx = aiLayout.chests.findIndex((c: any) => {
-          const d = Math.sqrt((c.x - startX) ** 2 + (c.y - startY) ** 2);
-          return d > 5 && d < 15;
-        }) || 0;
-        aiLayout.chests[closerIdx].items.push({ type: 'GUN', count: 12 });
       }
 
-      // Use AI Layout
-      aiLayout.monsters.forEach((m: any, i: number) => {
-        entities.push({
-          id: `monster-${i}`, x: m.x + 0.5, y: m.y + 0.5, type: Types.EntityType.MONSTER, health: 75,
-          data: { nextTarget: null, lastPathUpdate: 0, spawnX: m.x + 0.5, spawnY: m.y + 0.5, state: 'IDLE', hitFlash: 0 }
-        });
-      });
-      aiLayout.chests.forEach((c: any, i: number) => {
-        if (c.x === exitPos.x && c.y === exitPos.y) return; // Don't block exit
-        if (c.x === 1 && c.y === 1) return; // Don't overlap starter
-
-        const items = c.items.map((it: any, j: number) => {
-          let type = it.type as Types.ItemType;
-          if (type === Types.ItemType.GUN) {
-            if (gunSpawned) type = Types.ItemType.AMMO; // Only one gun
-            else gunSpawned = true;
-          }
-          // Flashlight replacement logic: Only allowed in starter chest
-          if (type === Types.ItemType.FLASHLIGHT) {
-            type = Types.ItemType.BATTERY;
-          }
-          return {
-            id: `it-${i}-${j}`,
-            type: type,
-            name: ITEM_NAMES[type],
-            durability: (type === Types.ItemType.KNIFE) ? 100 : undefined,
-            count: type === Types.ItemType.GUN ? 12 : (type === Types.ItemType.FOOD || type === Types.ItemType.WATER || type === Types.ItemType.AMMO || type === Types.ItemType.BATTERY ? 1 : undefined)
-          };
-        });
-        entities.push({ id: `chest-${i}`, x: c.x + 0.5, y: c.y + 0.5, type: Types.EntityType.CHEST, data: { items, isOpen: false } });
-      });
-    } else {
-      // Fallback Logic
-      deadEnds.forEach((pos, i) => {
-        if (pos.x <= 4 && pos.y <= 4) return;
-        if (pos.x === exitPos.x && pos.y === exitPos.y) return;
-        const type = Math.random() > 0.4 ? Types.EntityType.CHEST : Types.EntityType.MONSTER;
-        const items: Types.InventoryItem[] = [];
-        if (type === Types.EntityType.CHEST) {
-          const count = Math.floor(Math.random() * 2) + 1;
-          for (let j = 0; j < count; j++) {
-            const pool = [Types.ItemType.FOOD, Types.ItemType.WATER, Types.ItemType.KNIFE, Types.ItemType.AMMO, Types.ItemType.BATTERY];
-            // Increase chance of gun if not spawned yet and distance is decent
-            let it = pool[Math.floor(Math.random() * pool.length)];
-            const dist = Math.sqrt((pos.x - 1.5) ** 2 + (pos.y - 1.5) ** 2);
-            if (!gunSpawned && dist > 5 && dist < 15) {
-              it = Types.ItemType.GUN;
-            }
-            if (it === Types.ItemType.GUN) {
-              if (gunSpawned) it = Types.ItemType.AMMO;
-              else gunSpawned = true;
-            }
-            items.push({
-              id: `it-fb-${i}-${j}`, type: it, name: ITEM_NAMES[it],
-              durability: (it === Types.ItemType.KNIFE) ? 100 : undefined,
-              count: it === Types.ItemType.GUN ? 12 : (it === Types.ItemType.FOOD || it === Types.ItemType.WATER || it === Types.ItemType.AMMO || it === Types.ItemType.BATTERY ? 1 : undefined)
-            });
-          }
+      entities.push({
+        id: `e-${i}`,
+        x: pos.x + 0.5,
+        y: pos.y + 0.5,
+        type: entityType,
+        health: 75,
+        data: entityType === Types.EntityType.CHEST ? { items, isOpen: false } : {
+          nextTarget: null, lastPathUpdate: 0, spawnX: pos.x + 0.5, spawnY: pos.y + 0.5, state: 'IDLE', hitFlash: 0
         }
-        entities.push({
-          id: `e-fb-${i}`, x: pos.x + 0.5, y: pos.y + 0.5, type, health: 75,
-          data: type === Types.EntityType.CHEST ? { items, isOpen: false } : {
-            nextTarget: null, lastPathUpdate: 0, spawnX: pos.x + 0.5, spawnY: pos.y + 0.5, state: 'IDLE', hitFlash: 0
-          }
-        });
       });
+    });
+
+    // If gun still hasn't spawned (no dead ends in range), force it in a generic chest or monster spot
+    if (!gunSpawned) {
+      const fallbackPos = shuffledDeadEnds.find(p => Math.sqrt((p.x - startX) ** 2 + (p.y - startY) ** 2) > 5) || exitPos;
+      const targetEntity = entities.find(e => e.x === fallbackPos.x + 0.5 && e.y === fallbackPos.y + 0.5);
+      if (targetEntity && targetEntity.type === Types.EntityType.CHEST) {
+        targetEntity.data.items.push({ id: 'force-gun', type: Types.ItemType.GUN, name: ITEM_NAMES[Types.ItemType.GUN], count: 12 });
+      } else {
+        entities.push({
+          id: 'force-gun-chest', x: fallbackPos.x + 0.5, y: fallbackPos.y + 0.5, type: Types.EntityType.CHEST,
+          data: { isOpen: false, items: [{ id: 'force-gun', type: Types.ItemType.GUN, name: ITEM_NAMES[Types.ItemType.GUN], count: 12 }] }
+        });
+      }
     }
 
-    // Ensure at least some monsters and chests exist even if AI layout was sparse
-    if (entities.length < 5) {
-      // Quick remedial procedural spawn... (omitted for brevity but logical safety)
+    // Add extra monsters in corridors (not just dead ends)
+    for (let k = 0; k < 10; k++) {
+      const rx = Math.floor(Math.random() * Constants.MAP_SIZE);
+      const ry = Math.floor(Math.random() * Constants.MAP_SIZE);
+      if (map[ry][rx] === 0 && Math.sqrt((rx - startX) ** 2 + (ry - startY) ** 2) > 8) {
+        entities.push({
+          id: `monster-walk-${k}`, x: rx + 0.5, y: ry + 0.5, type: Types.EntityType.MONSTER, health: 75,
+          data: { nextTarget: null, lastPathUpdate: 0, spawnX: rx + 0.5, spawnY: ry + 0.5, state: 'IDLE', hitFlash: 0 }
+        });
+      }
     }
 
     setGameState({
@@ -403,7 +352,7 @@ const App: React.FC = () => {
       map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '', message: '发现近处有补给箱，请上前打开获取生存物资。', messageTimeout: 10, chaseActive: false, survivalTime: 0, isPaused: false, activeChestId: null, draggingItemId: null
     });
 
-    // Ensure the loading screen stays at least 14 seconds for narrative readability
+    // Narrative transition
     setTimeout(() => {
       setScreen('PLAYING');
       damageNumbersRef.current = [];
