@@ -488,7 +488,7 @@ const App: React.FC = () => {
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    // e.preventDefault(); // Sometimes creates issues with click passthrough, but safer for moves.
+    e.preventDefault();
     const t = e.touches[0];
     touchStartRef.current = { x: t.clientX, y: t.clientY, time: performance.now() };
     touchCurrentRef.current = { x: t.clientX, y: t.clientY };
@@ -520,6 +520,7 @@ const App: React.FC = () => {
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    if (e.cancelable) e.preventDefault();
     if (!isDraggingRef.current && touchStartRef.current) {
       // It was a tap
       handleInteraction(touchStartRef.current.x, touchStartRef.current.y);
