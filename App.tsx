@@ -1439,7 +1439,7 @@ const App: React.FC = () => {
 
       {/* --- NOTIFICATIONS --- */}
       {gameState.message && (
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 bg-black/80 px-6 py-3 border border-zinc-700 rounded-full text-white font-bold text-sm tracking-widest pointer-events-none animate-pulse z-20 whitespace-nowrap">
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 bg-black/80 px-4 py-3 border border-zinc-700 rounded-2xl text-white font-bold text-sm tracking-widest pointer-events-none animate-pulse z-20 w-max max-w-[85vw] text-center whitespace-pre-wrap leading-relaxed shadow-lg">
           {gameState.message}
         </div>
       )}
