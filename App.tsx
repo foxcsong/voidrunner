@@ -148,6 +148,8 @@ const App: React.FC = () => {
 
   // Asset Refs
   const playerImgRef = useRef<HTMLImageElement | null>(null);
+  const playerKnifeImgRef = useRef<HTMLImageElement | null>(null);
+  const playerShootImgRef = useRef<HTMLImageElement | null>(null);
   const monsterImgRef = useRef<HTMLImageElement | null>(null);
   const wallTopImgRef = useRef<HTMLImageElement | null>(null);
   const wallFaceImgRef = useRef<HTMLImageElement | null>(null);
@@ -193,6 +195,8 @@ const App: React.FC = () => {
     };
 
     loadImg('/assets/player.png', playerImgRef);
+    loadImg('/assets/player_knife.png', playerKnifeImgRef);
+    loadImg('/assets/player_shoot.png', playerShootImgRef);
     loadImg('/assets/monster.png', monsterImgRef);
     loadImg('/assets/wall_top.png', wallTopImgRef);
     loadImg('/assets/wall_face.png', wallFaceImgRef);
@@ -422,7 +426,12 @@ const App: React.FC = () => {
       setGameState(prev => {
         if (!prev) return null;
         const nextInv = prev.player.inventory.map(i => i.id === gun.id ? { ...i, count: Math.max(0, i.count! - 1) } : i);
-        return { ...prev, player: { ...prev.player, inventory: nextInv }, message: '武器开火', messageTimeout: 0.5 };
+        return {
+          ...prev,
+          player: { ...prev.player, inventory: nextInv, actionState: 'ATTACK_GUN', actionTimer: 0.2 },
+          message: '武器开火',
+          messageTimeout: 0.5
+        };
       });
 
       newEntities = newEntities.map(e => {
@@ -459,7 +468,12 @@ const App: React.FC = () => {
               if (prev.player.equippedLeftId === knife.id) prev.player.equippedLeftId = null;
               if (prev.player.equippedRightId === knife.id) prev.player.equippedRightId = null;
             }
-            return { ...prev, player: { ...prev.player, inventory: nextInv }, message: '近战格斗', messageTimeout: 0.5 };
+            return {
+              ...prev,
+              player: { ...prev.player, inventory: nextInv, actionState: 'ATTACK_KNIFE', actionTimer: 0.2 },
+              message: '近战格斗',
+              messageTimeout: 0.5
+            };
           });
           newEntities = newEntities.map(e => e.id === targetMonster.id ? { ...e, health: e.health! - 25, data: { ...e.data, hitFlash: 0.2, state: 'CHASING' } } : e);
           spawnDamageNumber(targetMonster.x, targetMonster.y - 0.5, 25, '#ffffff');
@@ -547,6 +561,16 @@ const App: React.FC = () => {
       let nextMessage = nextMessageTimeout <= 0 ? '' : prev.message;
 
       const player = { ...prev.player };
+
+      // Update Action Timer
+      if (player.actionTimer && player.actionTimer > 0) {
+        player.actionTimer -= delta;
+        if (player.actionTimer <= 0) {
+          player.actionState = 'IDLE';
+          player.actionTimer = 0;
+        }
+      }
+
       // Sprinting: Supports Shift (Left/Right) AND Touch Double Tap
       const isShiftHeld = !!keysRef.current['ShiftLeft'] || !!keysRef.current['ShiftRight'];
       player.sprinting = (isShiftHeld || isTouchSprintingRef.current) && player.hydration > 10;
@@ -1002,7 +1026,12 @@ const App: React.FC = () => {
           ctx.translate(player.x * s, player.y * s + bob); // Position relative to world, camera translates context
           ctx.rotate(shake);
           const size = 54;
-          ctx.drawImage(playerImgRef.current, -size / 2, -size / 2 - 12, size, size);
+
+          let sprite = playerImgRef.current;
+          if (player.actionState === 'ATTACK_KNIFE' && playerKnifeImgRef.current) sprite = playerKnifeImgRef.current;
+          if (player.actionState === 'ATTACK_GUN' && playerShootImgRef.current) sprite = playerShootImgRef.current;
+
+          ctx.drawImage(sprite, -size / 2, -size / 2 - 12, size, size);
           ctx.restore();
         } else {
           ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(player.x * s, player.y * s, 12, 0, Math.PI * 2); ctx.fill();
