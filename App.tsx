@@ -11,6 +11,8 @@ const ITEM_ICONS: Record<Types.ItemType, string> = {
   [Types.ItemType.FLASHLIGHT]: '🔦',
   [Types.ItemType.KNIFE]: '🔪',
   [Types.ItemType.GUN]: '🔫',
+  [Types.ItemType.AMMO]: '🔋',
+  [Types.ItemType.BATTERY]: '🪫',
 };
 
 const ITEM_NAMES: Record<Types.ItemType, string> = {
@@ -19,6 +21,8 @@ const ITEM_NAMES: Record<Types.ItemType, string> = {
   [Types.ItemType.FLASHLIGHT]: '手电筒',
   [Types.ItemType.KNIFE]: '战术匕首',
   [Types.ItemType.GUN]: '手枪',
+  [Types.ItemType.AMMO]: '备用弹夹',
+  [Types.ItemType.BATTERY]: '高能电池',
 };
 
 const SAVE_KEY = 'void_labyrinth_save';
@@ -258,6 +262,19 @@ const App: React.FC = () => {
     // Step 3: Populate Entities (Fallback to procedural if AI fails)
     const entities: Types.Entity[] = [];
 
+    // Add Starter Chest
+    entities.push({
+      id: 'starter-chest', x: 1.5, y: 1.5, type: Types.EntityType.CHEST,
+      data: {
+        isOpen: false,
+        items: [
+          { id: 'start-knife', type: Types.ItemType.KNIFE, name: ITEM_NAMES[Types.ItemType.KNIFE], durability: 100 },
+          { id: 'start-water', type: Types.ItemType.WATER, name: ITEM_NAMES[Types.ItemType.WATER], count: 1 },
+          { id: 'start-fl', type: Types.ItemType.FLASHLIGHT, name: ITEM_NAMES[Types.ItemType.FLASHLIGHT], durability: 100 }
+        ]
+      }
+    });
+
     // Find the furthest dead end for the EXIT first
     let exitPos = { x: Constants.MAP_SIZE - 2, y: Constants.MAP_SIZE - 2 };
     let maxDist = 0;
@@ -269,6 +286,8 @@ const App: React.FC = () => {
       }
     });
 
+    let gunSpawned = false;
+
     if (aiLayout) {
       // Use AI Layout
       aiLayout.monsters.forEach((m: any, i: number) => {
@@ -279,13 +298,22 @@ const App: React.FC = () => {
       });
       aiLayout.chests.forEach((c: any, i: number) => {
         if (c.x === exitPos.x && c.y === exitPos.y) return; // Don't block exit
-        const items = c.items.map((it: any, j: number) => ({
-          id: `it-${i}-${j}`,
-          type: it.type as Types.ItemType,
-          name: ITEM_NAMES[it.type as Types.ItemType],
-          durability: (it.type === 'KNIFE' || it.type === 'FLASHLIGHT') ? 100 : undefined,
-          count: it.type === 'GUN' ? 12 : (it.type === 'FOOD' || it.type === 'WATER' ? 1 : undefined)
-        }));
+        if (c.x === 1 && c.y === 1) return; // Don't overlap starter
+
+        const items = c.items.map((it: any, j: number) => {
+          let type = it.type as Types.ItemType;
+          if (type === Types.ItemType.GUN) {
+            if (gunSpawned) type = Types.ItemType.AMMO; // Only one gun
+            else gunSpawned = true;
+          }
+          return {
+            id: `it-${i}-${j}`,
+            type: type,
+            name: ITEM_NAMES[type],
+            durability: (type === 'KNIFE' || type === 'FLASHLIGHT') ? 100 : undefined,
+            count: type === 'GUN' ? 12 : (type === 'FOOD' || type === 'WATER' || type === 'AMMO' || type === 'BATTERY' ? 1 : undefined)
+          };
+        });
         entities.push({ id: `chest-${i}`, x: c.x + 0.5, y: c.y + 0.5, type: Types.EntityType.CHEST, data: { items, isOpen: false } });
       });
     } else {
@@ -298,12 +326,16 @@ const App: React.FC = () => {
         if (type === Types.EntityType.CHEST) {
           const count = Math.floor(Math.random() * 2) + 1;
           for (let j = 0; j < count; j++) {
-            const pool = [Types.ItemType.FOOD, Types.ItemType.WATER, Types.ItemType.KNIFE, Types.ItemType.FLASHLIGHT, Types.ItemType.GUN];
-            const it = pool[Math.floor(Math.random() * pool.length)];
+            const pool = [Types.ItemType.FOOD, Types.ItemType.WATER, Types.ItemType.KNIFE, Types.ItemType.FLASHLIGHT, Types.ItemType.GUN, Types.ItemType.AMMO, Types.ItemType.BATTERY];
+            let it = pool[Math.floor(Math.random() * pool.length)];
+            if (it === Types.ItemType.GUN) {
+              if (gunSpawned) it = Types.ItemType.AMMO;
+              else gunSpawned = true;
+            }
             items.push({
               id: `it-fb-${i}-${j}`, type: it, name: ITEM_NAMES[it],
               durability: (it === Types.ItemType.KNIFE || it === Types.ItemType.FLASHLIGHT) ? 100 : undefined,
-              count: it === Types.ItemType.GUN ? 12 : (it === Types.ItemType.FOOD || it === Types.ItemType.WATER ? 1 : undefined)
+              count: it === Types.ItemType.GUN ? 12 : (it === Types.ItemType.FOOD || it === Types.ItemType.WATER || it === Types.ItemType.AMMO || it === Types.ItemType.BATTERY ? 1 : undefined)
             });
           }
         }
@@ -323,14 +355,14 @@ const App: React.FC = () => {
 
     setGameState({
       player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [{ id: 'init-f', type: Types.ItemType.FLASHLIGHT, name: ITEM_NAMES[Types.ItemType.FLASHLIGHT], durability: 100 }], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false, hitFlash: 0 },
-      map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '', message: '系统初始化完成', messageTimeout: 4, chaseActive: false, survivalTime: 0, isPaused: false, activeChestId: null, draggingItemId: null
+      map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '', message: '发现近处有补给箱，请上前打开获取生存物资。', messageTimeout: 10, chaseActive: false, survivalTime: 0, isPaused: false, activeChestId: null, draggingItemId: null
     });
 
-    // Ensure the loading screen stays at least 8 seconds for narrative readability
+    // Ensure the loading screen stays at least 14 seconds for narrative readability
     setTimeout(() => {
       setScreen('PLAYING');
       damageNumbersRef.current = [];
-    }, 14000); // 14s is enough for the 4 sentences at 3.5s each
+    }, 14000);
   }, [triggerAIEvent]);
 
   const saveAndExit = () => {
@@ -372,30 +404,36 @@ const App: React.FC = () => {
       const distToPlayer = Math.sqrt((targetChest.x - player.x) ** 2 + (targetChest.y - player.y) ** 2);
       if (distToPlayer < 1.5) {
         setGameState(prev => prev ? { ...prev, activeChestId: targetChest.id } : null);
-        triggerAIEvent("我发现了一个补给箱，在这个地狱里，这代表着暂时的生存希望...");
-        return; // Exit if opening chest
+        if (targetChest.id === 'starter-chest') {
+          setGameState(prev => prev ? {
+            ...prev,
+            message: '提示：点击箱中物资拿取。注意匕首耐久度及生存状态，极致饥饿或脱水将损耗生命！',
+            messageTimeout: 8
+          } : null);
+        } else {
+          triggerAIEvent("我发现了一个补给箱，在这个地狱里，这代表着暂时的生存希望...");
+        }
+        return;
       }
     }
 
-    if (gun && (gun.count || 0) > 0) {
-      // GUN ATTACK
+    if (gun) {
+      // GUN ATTACK - Requires ammo
+      if ((gun.count || 0) <= 0) {
+        setGameState(prev => prev ? { ...prev, message: '弹药耗尽，请点击弹夹重装', messageTimeout: 2 } : null);
+        return;
+      }
+
       attackMade = true;
       setGameState(prev => {
         if (!prev) return null;
-        let nextInv = prev.player.inventory.map(i => i.id === gun.id ? { ...i, count: (i.count! - 1) } : i);
-        const updatedGun = nextInv.find(i => i.id === gun.id);
-        if (updatedGun && updatedGun.count! <= 0) {
-          nextInv = nextInv.filter(i => i.id !== gun.id);
-          if (prev.player.equippedLeftId === gun.id) prev.player.equippedLeftId = null;
-          if (prev.player.equippedRightId === gun.id) prev.player.equippedRightId = null;
-        }
+        const nextInv = prev.player.inventory.map(i => i.id === gun.id ? { ...i, count: Math.max(0, i.count! - 1) } : i);
         return { ...prev, player: { ...prev.player, inventory: nextInv }, message: '武器开火', messageTimeout: 0.5 };
       });
 
       newEntities = newEntities.map(e => {
         if (e.type === Types.EntityType.MONSTER && e.health! > 0) {
           const dist = Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2);
-          // Require clear line of sight for hits
           const hasLos = isLineOfSightClear(player.x, player.y, e.x, e.y, gameState.map);
           if (dist < 0.8 && hasLos) {
             spawnDamageNumber(e.x, e.y - 0.5, 40, '#fbbf24');
@@ -405,8 +443,13 @@ const App: React.FC = () => {
         return e;
       });
 
-    } else if (knife && (knife.durability || 0) > 0) {
-      // KNIFE ATTACK
+    } else if (knife) {
+      // KNIFE ATTACK - Requires durability
+      if ((knife.durability || 0) <= 0) {
+        setGameState(prev => prev ? { ...prev, message: '匕首已损坏', messageTimeout: 2 } : null);
+        return;
+      }
+
       const targetMonster = newEntities.find(e => e.type === Types.EntityType.MONSTER && e.health! > 0 && Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2) < 0.8);
       if (targetMonster) {
         const distToPlayer = Math.sqrt((targetMonster.x - player.x) ** 2 + (targetMonster.y - player.y) ** 2);
@@ -415,7 +458,7 @@ const App: React.FC = () => {
           attackMade = true;
           setGameState(prev => {
             if (!prev) return null;
-            let nextInv = prev.player.inventory.map(i => i.id === knife.id ? { ...i, durability: (i.durability! - 2) } : i);
+            let nextInv = prev.player.inventory.map(i => i.id === knife.id ? { ...i, durability: Math.max(0, i.durability! - 2) } : i);
             const updatedKnife = nextInv.find(i => i.id === knife.id);
             if (updatedKnife && updatedKnife.durability! <= 0) {
               nextInv = nextInv.filter(i => i.id !== knife.id);
@@ -424,14 +467,8 @@ const App: React.FC = () => {
             }
             return { ...prev, player: { ...prev.player, inventory: nextInv }, message: '近战格斗', messageTimeout: 0.5 };
           });
-
-          newEntities = newEntities.map(e => {
-            if (e.id === targetMonster.id) {
-              spawnDamageNumber(e.x, e.y - 0.5, 25, '#ef4444');
-              return { ...e, health: e.health! - 25, data: { ...e.data, hitFlash: 0.2, state: 'CHASING' } };
-            }
-            return e;
-          });
+          newEntities = newEntities.map(e => e.id === targetMonster.id ? { ...e, health: e.health! - 25, data: { ...e.data, hitFlash: 0.2, state: 'CHASING' } } : e);
+          spawnDamageNumber(targetMonster.x, targetMonster.y - 0.5, 25, '#ffffff');
         }
       }
     }
@@ -601,13 +638,9 @@ const App: React.FC = () => {
         if (it.durability! > 0) {
           it.durability! -= 0.5 * delta;
           if (it.durability! <= 0) {
-            const id = it.id;
-            player.inventory.splice(flItemIndex, 1);
-            if (player.equippedLeftId === id) player.equippedLeftId = null;
-            if (player.equippedRightId === id) player.equippedRightId = null;
-            if (player.equippedPocketId === id) player.equippedPocketId = null;
             player.isFlashlightOn = false;
             triggerAIEvent("最后的一丝光亮也消失了，我在黑暗中彻底变成了一件猎物……");
+            setGameState(prev => prev ? { ...prev, message: '电量耗尽，请使用电池', messageTimeout: 3 } : null);
           }
         } else {
           player.isFlashlightOn = false;
@@ -1231,33 +1264,44 @@ const App: React.FC = () => {
                 <div onClick={() => {
                   setGameState(prev => {
                     if (!prev) return null;
-                    const p = autoEquip(prev.player, item);
-                    // If autoEquip didn't assign (full slots), maybe swap active?
-                    // For now, autoEquip is smart enough for empty slots.
-                    // If strict swap needed:
-                    // if item is FLASHLIGHT -> force to left
-                    // if item is WEAPON -> force to right
-                    // but user asked for "default into...", which autoEquip does.
-                    // Let's force it if autoEquip fails or just use a specialized equip logic here.
+                    const p = { ...prev.player };
 
-                    // Force Logic per user request:
+                    // RELOAD/RECHARGE LOGIC
+                    if (item.type === Types.ItemType.BATTERY) {
+                      const fl = p.inventory.find(i => i.type === Types.ItemType.FLASHLIGHT);
+                      if (fl) {
+                        fl.durability = 100;
+                        p.inventory = p.inventory.filter(i => i.id !== item.id);
+                        return { ...prev, player: p, message: '电筒已充电', messageTimeout: 2 };
+                      }
+                    } else if (item.type === Types.ItemType.AMMO) {
+                      const gun = p.inventory.find(i => i.type === Types.ItemType.GUN);
+                      if (gun) {
+                        gun.count = 12;
+                        p.inventory = p.inventory.filter(i => i.id !== item.id);
+                        return { ...prev, player: p, message: '已更换弹夹', messageTimeout: 2 };
+                      }
+                    }
+
+                    // NORMAL EQUIP LOGIC
+                    const nextP = autoEquip(p, item);
                     if (item.type === Types.ItemType.FLASHLIGHT) {
-                      p.equippedLeftId = item.id;
-                      if (p.equippedPocketId === item.id) p.equippedPocketId = null;
-                      if (p.equippedRightId === item.id) p.equippedRightId = null;
+                      nextP.equippedLeftId = item.id;
+                      if (nextP.equippedPocketId === item.id) nextP.equippedPocketId = null;
+                      if (nextP.equippedRightId === item.id) nextP.equippedRightId = null;
                     }
                     else if (item.type === Types.ItemType.GUN || item.type === Types.ItemType.KNIFE) {
-                      p.equippedRightId = item.id;
-                      if (p.equippedPocketId === item.id) p.equippedPocketId = null;
-                      if (p.equippedLeftId === item.id) p.equippedLeftId = null;
+                      nextP.equippedRightId = item.id;
+                      if (nextP.equippedPocketId === item.id) nextP.equippedPocketId = null;
+                      if (nextP.equippedLeftId === item.id) nextP.equippedLeftId = null;
                     }
                     else if (item.type === Types.ItemType.FOOD || item.type === Types.ItemType.WATER) {
-                      p.equippedPocketId = item.id;
-                      if (p.equippedLeftId === item.id) p.equippedLeftId = null;
-                      if (p.equippedRightId === item.id) p.equippedRightId = null;
+                      nextP.equippedPocketId = item.id;
+                      if (nextP.equippedLeftId === item.id) nextP.equippedLeftId = null;
+                      if (nextP.equippedRightId === item.id) nextP.equippedRightId = null;
                     }
 
-                    return { ...prev, player: p };
+                    return { ...prev, player: nextP };
                   });
                   setShowInventory(false);
                 }} className="absolute inset-0 bg-transparent z-10 cursor-pointer active:bg-white/10" />

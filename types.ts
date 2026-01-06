@@ -4,7 +4,9 @@ export enum ItemType {
   WATER = 'WATER',
   FLASHLIGHT = 'FLASHLIGHT',
   KNIFE = 'KNIFE',
-  GUN = 'GUN'
+  GUN = 'GUN',
+  AMMO = 'AMMO',
+  BATTERY = 'BATTERY'
 }
 
 export interface InventoryItem {

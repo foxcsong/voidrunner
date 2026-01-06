@@ -31,9 +31,10 @@ export async function generateLayout(emptyCells: { x: number, y: number }[], dea
     要求：
     1. 在死胡同优先放置宝箱，总数约5-8个。
     2. 在空地放置怪物，总数约8-12个，确保难度曲线合理。
-    3. 宝箱物品类型仅限: FOOD, WATER, FLASHLIGHT, KNIFE, GUN。
-    4. 严格返回 JSON 格式，不要包含 Markdown 代码块，不要有任何多余文字。
-    格式: {"monsters": [{"x": number, "y": number}, ...], "chests": [{"x": number, "y": number, "items": [{"type": "ITEM_TYPE", "count": 10}, ...]}]}`;
+    3. 宝箱物品类型仅限: FOOD, WATER, FLASHLIGHT, KNIFE, GUN, AMMO, BATTERY。
+    4. 特别注意：整个迷宫只能有一个 GUN，但可以有多个 AMMO。
+    5. 严格返回 JSON 格式，不要包含 Markdown 代码块，不要有任何多余文字。
+    格式: {"monsters": [{"x": number, "y": number}, ...], "chests": [{"x": number, "y": number, "items": [{"type": "ITEM_TYPE", "count": 12}, ...]}]}`;
 
     const result = await ai.models.generateContent({
       model: 'gemini-1.5-flash',
