@@ -289,6 +289,42 @@ const App: React.FC = () => {
     let gunSpawned = false;
 
     if (aiLayout) {
+      // Ensure one gun exists and is within 5-15 units of start if possible
+      let hasGunInAI = false;
+      let gunChestIdx = -1;
+      aiLayout.chests.forEach((c: any, idx: number) => {
+        if (c.items.some((it: any) => it.type === 'GUN')) {
+          hasGunInAI = true;
+          gunChestIdx = idx;
+        }
+      });
+
+      const startX = 1.5, startY = 1.5;
+      if (hasGunInAI) {
+        const gc = aiLayout.chests[gunChestIdx];
+        const dist = Math.sqrt((gc.x - startX) ** 2 + (gc.y - startY) ** 2);
+        if (dist > 18) {
+          // Relocate gun to a closer chest
+          const closerIdx = aiLayout.chests.findIndex((c: any) => {
+            const d = Math.sqrt((c.x - startX) ** 2 + (c.y - startY) ** 2);
+            return d > 5 && d < 15;
+          });
+          if (closerIdx !== -1) {
+            // Remove gun from old chest
+            aiLayout.chests[gunChestIdx].items = aiLayout.chests[gunChestIdx].items.filter((it: any) => it.type !== 'GUN');
+            // Add gun to closer chest
+            aiLayout.chests[closerIdx].items.push({ type: 'GUN', count: 12 });
+          }
+        }
+      } else if (aiLayout.chests.length > 0) {
+        // No gun in AI layout, force one into a reasonably close chest
+        const closerIdx = aiLayout.chests.findIndex((c: any) => {
+          const d = Math.sqrt((c.x - startX) ** 2 + (c.y - startY) ** 2);
+          return d > 5 && d < 15;
+        }) || 0;
+        aiLayout.chests[closerIdx].items.push({ type: 'GUN', count: 12 });
+      }
+
       // Use AI Layout
       aiLayout.monsters.forEach((m: any, i: number) => {
         entities.push({
@@ -331,7 +367,12 @@ const App: React.FC = () => {
           const count = Math.floor(Math.random() * 2) + 1;
           for (let j = 0; j < count; j++) {
             const pool = [Types.ItemType.FOOD, Types.ItemType.WATER, Types.ItemType.KNIFE, Types.ItemType.AMMO, Types.ItemType.BATTERY];
+            // Increase chance of gun if not spawned yet and distance is decent
             let it = pool[Math.floor(Math.random() * pool.length)];
+            const dist = Math.sqrt((pos.x - 1.5) ** 2 + (pos.y - 1.5) ** 2);
+            if (!gunSpawned && dist > 5 && dist < 15) {
+              it = Types.ItemType.GUN;
+            }
             if (it === Types.ItemType.GUN) {
               if (gunSpawned) it = Types.ItemType.AMMO;
               else gunSpawned = true;
