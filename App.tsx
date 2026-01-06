@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as Types from './types';
 import * as Constants from './constants';
 import * as MazeGen from './engine/MazeGen';
+import { getAtmosphericMessage } from './services/geminiService';
 
 const ITEM_ICONS: Record<Types.ItemType, string> = {
   [Types.ItemType.FOOD]: '🍞',
@@ -105,6 +106,20 @@ const App: React.FC = () => {
   const lastTapTimeRef = useRef(0);
   const joystickVecRef = useRef<{ x: number, y: number } | null>(null);
   const isTouchSprintingRef = useRef(false);
+  const lastAIEventTimeRef = useRef<number>(0);
+
+  const triggerAIEvent = useCallback(async (eventDescription: string) => {
+    const now = Date.now();
+    if (now - lastAIEventTimeRef.current < 8000) return; // 8s cooldown to avoid noise
+    lastAIEventTimeRef.current = now;
+
+    try {
+      const msg = await getAtmosphericMessage(eventDescription);
+      setGameState(prev => prev ? { ...prev, message: msg, messageTimeout: 5 } : null);
+    } catch (e) {
+      console.error("AI Event trigger failed:", e);
+    }
+  }, []);
 
   useEffect(() => {
     const save = localStorage.getItem(SAVE_KEY);
@@ -210,7 +225,8 @@ const App: React.FC = () => {
     });
     setScreen('PLAYING');
     damageNumbersRef.current = [];
-  }, []);
+    triggerAIEvent("我醒来时，四周只有冰冷的墙壁，迷宫似乎在生长...");
+  }, [triggerAIEvent]);
 
   const saveAndExit = () => {
     if (gameState) {
@@ -251,6 +267,7 @@ const App: React.FC = () => {
       const distToPlayer = Math.sqrt((targetChest.x - player.x) ** 2 + (targetChest.y - player.y) ** 2);
       if (distToPlayer < 1.5) {
         setGameState(prev => prev ? { ...prev, activeChestId: targetChest.id } : null);
+        triggerAIEvent("我发现了一个补给箱，在这个地狱里，这代表着暂时的生存希望...");
         return; // Exit if opening chest
       }
     }
@@ -485,8 +502,7 @@ const App: React.FC = () => {
             if (player.equippedRightId === id) player.equippedRightId = null;
             if (player.equippedPocketId === id) player.equippedPocketId = null;
             player.isFlashlightOn = false;
-            nextMessage = "BATTERY_DEPLETED";
-            nextMessageTimeout = 2.0;
+            triggerAIEvent("最后的一丝光亮也消失了，我在黑暗中彻底变成了一件猎物……");
           }
         } else {
           player.isFlashlightOn = false;
@@ -494,6 +510,11 @@ const App: React.FC = () => {
       } else {
         player.isFlashlightOn = false;
       }
+
+      // 10. AI TRIGGERS for LOW STATS
+      if (player.health < 25) triggerAIEvent("我感觉生命在流逝，视线开始变得模糊，呼吸变得沉重……");
+      else if (player.hunger < 15) triggerAIEvent("胃部传来的剧痛在提醒我，如果再找不到食物，我就要被饿死了……");
+      else if (player.hydration < 15) triggerAIEvent("嗓子干得像着了火，我需要水，哪怕只有一滴……");
 
       let nextEntities = prev.entities.map(e => {
         if (e.type !== Types.EntityType.MONSTER || e.health! <= 0) return e;
@@ -597,6 +618,12 @@ const App: React.FC = () => {
         return nextE;
       });
 
+      // 11. CHASE ACTIVE TRACKING & AI TRIGGER
+      const chaseActive = nextEntities.some(e => e.type === Types.EntityType.MONSTER && e.data.state === 'CHASING');
+      if (!prev.chaseActive && chaseActive) {
+        triggerAIEvent("那种令人毛骨悚然的直觉来了……有什么东西盯上我了……他在靠近……");
+      }
+
       // Player Hit Flash Decay
       if (player.hitFlash && player.hitFlash > 0) {
         player.hitFlash = Math.max(0, player.hitFlash - delta * 2);
@@ -623,6 +650,7 @@ const App: React.FC = () => {
         messageTimeout: nextMessageTimeout,
         message: nextMessage,
         activeChestId,
+        chaseActive,
         isGameOver: player.health <= 0,
         isVictory,
         deathReason: player.health <= 0 ? "生命维持系统完全失效" : ""
