@@ -1433,7 +1433,6 @@ const App: React.FC = () => {
 
       return { ...prev, player: p };
     });
-    setShowInventory(false);
   };
 
   return (
@@ -1551,7 +1550,6 @@ const App: React.FC = () => {
 
                     return { ...prev, player: nextP };
                   });
-                  setShowInventory(false);
                 }} className="absolute inset-0 bg-transparent z-10 cursor-pointer active:bg-white/10" />
 
                 {/* REMOVED OLD EQUIP BUTTONS */}
