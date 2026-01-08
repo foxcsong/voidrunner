@@ -6,7 +6,8 @@ export enum ItemType {
   KNIFE = 'KNIFE',
   GUN = 'GUN',
   AMMO = 'AMMO',
-  BATTERY = 'BATTERY'
+  BATTERY = 'BATTERY',
+  KEY = 'KEY'
 }
 
 export interface InventoryItem {
@@ -19,7 +20,8 @@ export interface InventoryItem {
 
 export enum EntityType {
   CHEST = 'CHEST',
-  MONSTER = 'MONSTER'
+  MONSTER = 'MONSTER',
+  EXIT_GATE = 'EXIT_GATE'
 }
 
 export interface DamageNumber {

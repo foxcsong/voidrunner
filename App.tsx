@@ -15,6 +15,7 @@ const ITEM_ICONS: Record<Types.ItemType, string> = {
   [Types.ItemType.GUN]: '🔫',
   [Types.ItemType.AMMO]: '🔋',
   [Types.ItemType.BATTERY]: '🪫',
+  [Types.ItemType.KEY]: '🔑',
 };
 
 const ITEM_NAMES: Record<Types.ItemType, string> = {
@@ -25,6 +26,7 @@ const ITEM_NAMES: Record<Types.ItemType, string> = {
   [Types.ItemType.GUN]: '手枪',
   [Types.ItemType.AMMO]: '备用弹夹',
   [Types.ItemType.BATTERY]: '高能电池',
+  [Types.ItemType.KEY]: '虚空钥匙',
 };
 
 const SAVE_KEY = 'void_labyrinth_save';
@@ -395,6 +397,34 @@ const App: React.FC = () => {
       }
     }
 
+    // Add EXIT_GATE at exit position
+    entities.push({
+      id: 'exit-gate',
+      x: exitPos.x + 0.5,
+      y: exitPos.y + 0.5,
+      type: Types.EntityType.EXIT_GATE,
+      data: { isLocked: true }
+    });
+
+    // DISTRIBUTE KEYS
+    // 1. Two keys in two random chests
+    const chests = entities.filter(e => e.type === Types.EntityType.CHEST && e.id !== 'starter-chest');
+    const shuffledChests = chests.sort(() => Math.random() - 0.5);
+    for (let i = 0; i < Math.min(2, shuffledChests.length); i++) {
+      shuffledChests[i].data.items.push({
+        id: `key-chest-${i}`,
+        type: Types.ItemType.KEY,
+        name: ITEM_NAMES[Types.ItemType.KEY]
+      });
+    }
+
+    // 2. One key in a random monster
+    const monsters = entities.filter(e => e.type === Types.EntityType.MONSTER);
+    const randomMonster = monsters[Math.floor(Math.random() * monsters.length)];
+    if (randomMonster) {
+      randomMonster.data.hasKey = true;
+    }
+
     setGameState({
       player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false, hitFlash: 0 },
       map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '', message: '发现近处有补给箱，请上前打开获取生存物资。', messageTimeout: 10, chaseActive: false, survivalTime: 0, isPaused: false, activeChestId: null, draggingItemId: null
@@ -455,7 +485,46 @@ const App: React.FC = () => {
     let attackMade = false;
     let newEntities = [...gameState.entities];
 
-    // CHECK CHEST INTERACTION FIRST
+    // CHECK EXIT_GATE INTERACTION
+    const targetGate = newEntities.find(e => e.type === Types.EntityType.EXIT_GATE && Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2) < 0.8);
+    if (targetGate) {
+      const distToPlayer = Math.sqrt((targetGate.x - player.x) ** 2 + (targetGate.y - player.y) ** 2);
+      if (distToPlayer < 1.5) {
+        const keyCount = player.inventory.filter(i => i.type === Types.ItemType.KEY).length;
+        if (keyCount >= 3) {
+          setGameState(prev => {
+            if (!prev) return null;
+            // Remove 3 keys
+            let removedCount = 0;
+            const nextInv = prev.player.inventory.filter(i => {
+              if (i.type === Types.ItemType.KEY && removedCount < 3) {
+                removedCount++;
+                return false;
+              }
+              return true;
+            });
+            // Remove the gate entity
+            const nextEntities = prev.entities.filter(e => e.id !== targetGate.id);
+            return {
+              ...prev,
+              player: { ...prev.player, inventory: nextInv },
+              entities: nextEntities,
+              message: '出口已解锁！虚空在召唤...',
+              messageTimeout: 5
+            };
+          });
+        } else {
+          setGameState(prev => prev ? {
+            ...prev,
+            message: `只有集齐 3 把虚空钥匙，才能开启最后的门户。目前进度: ${keyCount}/3`,
+            messageTimeout: 5
+          } : null);
+        }
+        return;
+      }
+    }
+
+    // CHECK CHEST INTERACTION NEXT
     const targetChest = newEntities.find(e => e.type === Types.EntityType.CHEST && Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2) < 0.8);
     if (targetChest) {
       const distToPlayer = Math.sqrt((targetChest.x - player.x) ** 2 + (targetChest.y - player.y) ** 2);
@@ -677,7 +746,15 @@ const App: React.FC = () => {
       const checkWall = (tx: number, ty: number) => {
         const mx = Math.floor(tx), my = Math.floor(ty);
         if (my < 0 || my >= prev.map.length || mx < 0 || mx >= prev.map[0].length) return true;
-        return prev.map[my][mx] === 1;
+        if (prev.map[my][mx] === 1) return true;
+
+        // Add EXIT_GATE collision
+        const gate = prev.entities.find(e => e.type === Types.EntityType.EXIT_GATE);
+        if (gate) {
+          const dist = Math.sqrt((tx - gate.x) ** 2 + (ty - gate.y) ** 2);
+          if (dist < 0.8) return true;
+        }
+        return false;
       };
 
       if (checkWall(nx + (dx > 0 ? r : -r), player.y)) canX = false;
@@ -741,6 +818,32 @@ const App: React.FC = () => {
         if (nextData.hitFlash > 0) nextData.hitFlash = Math.max(0, nextData.hitFlash - delta);
 
         const nextE = { ...e, data: nextData };
+
+        if (nextE.data.state === 'IDLE') {
+          // ... existing logic ...
+        }
+
+        // MONSTER DEATH -> KEY DROP
+        if (nextE.health! <= 0) {
+          if (nextE.data.hasKey) {
+            // Transform into a chest containing the key
+            return {
+              ...nextE,
+              type: Types.EntityType.CHEST,
+              health: undefined,
+              data: {
+                isOpen: false,
+                items: [{
+                  id: `key-drop-${nextE.id}`,
+                  type: Types.ItemType.KEY,
+                  name: ITEM_NAMES[Types.ItemType.KEY]
+                }]
+              }
+            };
+          }
+          // Normal monster death (remains for sorting but logic skipped)
+          return nextE;
+        }
 
         if (nextE.data.state === 'IDLE') {
           // PATROL LOGIC
@@ -1066,6 +1169,34 @@ const App: React.FC = () => {
               ctx.fillStyle = e.data.hitFlash > 0 ? '#ef4444' : '#7f1d1d';
               ctx.beginPath(); ctx.arc(e.x * s, e.y * s, 15, 0, Math.PI * 2); ctx.fill();
             }
+          } else if (e.type === Types.EntityType.EXIT_GATE) {
+            const size = 64;
+            const time = performance.now() * 0.003;
+            ctx.save();
+            ctx.translate(e.x * s, e.y * s);
+
+            // Energy Field
+            const grad = ctx.createRadialGradient(0, 0, 5, 0, 0, 40 + Math.sin(time) * 5);
+            grad.addColorStop(0, 'rgba(0, 100, 255, 0.6)');
+            grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath(); ctx.arc(0, 0, 45, 0, Math.PI * 2); ctx.fill();
+
+            // Lock Icon
+            ctx.font = '30px serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#0cf';
+            ctx.fillText('🔒', 0, 0);
+
+            // Rotating Seals
+            ctx.rotate(time);
+            ctx.strokeStyle = 'rgba(0, 200, 255, 0.4)';
+            ctx.setLineDash([5, 10]);
+            ctx.beginPath(); ctx.arc(0, 0, 30, 0, Math.PI * 2); ctx.stroke();
+
+            ctx.restore();
           }
         }
       });
