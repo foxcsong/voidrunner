@@ -1494,7 +1494,7 @@ const App: React.FC = () => {
 
       {/* --- INVENTORY OVERLAY --- */}
       {showInventory && (
-        <div className="absolute inset-0 z-50 bg-black/95 flex flex-col p-6 pt-16 animate-fade-in pointer-events-auto">
+        <div className="absolute top-0 left-0 right-0 bottom-[200px] z-50 bg-zinc-900/95 backdrop-blur-md flex flex-col p-6 pt-16 animate-fade-in pointer-events-auto shadow-2xl border-b border-zinc-700 rounded-b-[2rem]">
           <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
             <h2 className="text-xl font-bold tracking-widest text-zinc-400">物资背包</h2>
             <button onClick={() => setShowInventory(false)} className="px-4 py-2 border border-zinc-600 rounded text-zinc-400">关闭</button>
