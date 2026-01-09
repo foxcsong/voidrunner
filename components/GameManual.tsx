@@ -42,7 +42,7 @@ export const GameManual: React.FC<GameManualProps> = ({ onClose }) => {
                         <ul className="text-zinc-400 text-xs space-y-3">
                             <li><span className="text-white font-bold">● 移动 (Move)：</span> 鼠标点击或触摸地面。PC端可用 <span className="bg-zinc-800 px-1 border border-zinc-700">WASD</span>，<span className="bg-zinc-800 px-1 border border-zinc-700">Shift</span> 疾跑。</li>
                             <li><span className="text-white font-bold">● 互动 (Interact)：</span> 靠近并点击补给箱、怪物或关口。</li>
-                            <li><span className="text-white font-bold">● 背包 (Inventory)：</span> 点击左侧汉堡图标打开。点击物品使用或装备（装备后点击底部栏位可使用）。</li>
+                            <li><span className="text-white font-bold">● 背包 (Inventory)：</span> 点击右上角列表图标打开。点击物品使用或装备（装备后点击底部栏位可使用）。</li>
                         </ul>
                     </div>
                     <div className="space-y-4">
