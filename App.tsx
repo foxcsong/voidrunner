@@ -491,13 +491,13 @@ const App: React.FC = () => {
       const distToPlayer = Math.sqrt((targetGate.x - player.x) ** 2 + (targetGate.y - player.y) ** 2);
       if (distToPlayer < 1.5) {
         const keyCount = player.inventory.filter(i => i.type === Types.ItemType.KEY).length;
-        if (keyCount >= 3) {
+        if (keyCount >= 2) {
           setGameState(prev => {
             if (!prev) return null;
-            // Remove 3 keys
+            // Remove 2 keys
             let removedCount = 0;
             const nextInv = prev.player.inventory.filter(i => {
-              if (i.type === Types.ItemType.KEY && removedCount < 3) {
+              if (i.type === Types.ItemType.KEY && removedCount < 2) {
                 removedCount++;
                 return false;
               }
@@ -516,7 +516,7 @@ const App: React.FC = () => {
         } else {
           setGameState(prev => prev ? {
             ...prev,
-            message: `只有集齐 3 把虚空钥匙，才能开启最后的门户。目前进度: ${keyCount}/3`,
+            message: `此关口需要 2 把虚空钥匙才能开启。当前钥匙: ${keyCount}/2`,
             messageTimeout: 5
           } : null);
         }
@@ -810,7 +810,30 @@ const App: React.FC = () => {
       else if (player.hydration < 15) triggerAIEvent("嗓子干得像着了火，我需要水，哪怕只有一滴……");
 
       let nextEntities = prev.entities.map(e => {
-        if (e.type !== Types.EntityType.MONSTER || e.health! <= 0) return e;
+        if (e.type !== Types.EntityType.MONSTER) return e;
+
+        // CRITICAL FIX: Handle monster death for key drop BEFORE skipping dead monsters
+        if (e.health! <= 0) {
+          if (e.data.hasKey) {
+            // Transform into a chest containing the key
+            return {
+              ...e,
+              type: Types.EntityType.CHEST,
+              health: undefined,
+              data: {
+                isOpen: false,
+                items: [{
+                  id: `key-drop-${e.id}`,
+                  type: Types.ItemType.KEY,
+                  name: ITEM_NAMES[Types.ItemType.KEY]
+                }]
+              }
+            };
+          }
+          // Already dead monster that doesn't have a key (or already dropped it)
+          return e;
+        }
+
         const dP = Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2);
 
         // Handle Hit Flash Decay
@@ -819,31 +842,6 @@ const App: React.FC = () => {
 
         const nextE = { ...e, data: nextData };
 
-        if (nextE.data.state === 'IDLE') {
-          // ... existing logic ...
-        }
-
-        // MONSTER DEATH -> KEY DROP
-        if (nextE.health! <= 0) {
-          if (nextE.data.hasKey) {
-            // Transform into a chest containing the key
-            return {
-              ...nextE,
-              type: Types.EntityType.CHEST,
-              health: undefined,
-              data: {
-                isOpen: false,
-                items: [{
-                  id: `key-drop-${nextE.id}`,
-                  type: Types.ItemType.KEY,
-                  name: ITEM_NAMES[Types.ItemType.KEY]
-                }]
-              }
-            };
-          }
-          // Normal monster death (remains for sorting but logic skipped)
-          return nextE;
-        }
 
         if (nextE.data.state === 'IDLE') {
           // PATROL LOGIC
