@@ -1325,7 +1325,7 @@ const App: React.FC = () => {
     return (
       <div className="w-screen h-screen bg-black flex flex-col items-center justify-center p-10 font-mono text-zinc-100">
         <div className="absolute inset-0 bg-blue-900/5 pointer-events-none" />
-        <h1 className="text-7xl font-black tracking-widest mb-2 animate-pulse text-zinc-50">虚空行者</h1>
+        <h1 className="text-7xl font-black tracking-widest mb-2 animate-pulse text-zinc-50 text-center">无尽虚空：迷宫</h1>
         <p className="text-zinc-500 mb-16 tracking-[0.5em] text-[10px] uppercase">迷宫生存模拟器 v3.2</p>
 
         <div className="flex flex-col gap-6 w-96 relative z-10">
