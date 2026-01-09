@@ -19,10 +19,12 @@ export interface InventoryItem {
 }
 
 export enum EntityType {
-  CHEST = 'CHEST',
+  PLAYER = 'PLAYER',
   MONSTER = 'MONSTER',
+  CHEST = 'CHEST',
   EXIT_GATE = 'EXIT_GATE'
 }
+export type Screen = 'MENU' | 'PLAYING' | 'LOADING_AI';
 
 export interface DamageNumber {
   id: number;
