@@ -1383,6 +1383,7 @@ const App: React.FC = () => {
             onCancel={() => setShowAuth(false)}
           />
         )}
+        {showManual && <GameManual onClose={() => setShowManual(false)} />}
       </div>
     );
   }
