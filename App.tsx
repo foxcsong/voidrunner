@@ -783,7 +783,14 @@ const App: React.FC = () => {
       player.hunger -= 0.25 * delta * rateMultiplier;
       player.hydration -= 0.4 * delta * rateMultiplier;
 
-      if (player.hunger <= 0 || player.hydration <= 0) player.health -= 15 * delta;
+      // 1. Health Penalty (Hunger/Dehydration)
+      if (player.hunger <= 0 || player.hydration <= 0) {
+        player.health -= 15 * delta;
+      }
+      // 2. Health Regeneration (Well-fed & Hydrated > 85%)
+      else if (player.hunger > 85 && player.hydration > 85 && player.health < 100) {
+        player.health = Math.min(100, player.health + 5 * delta); // Regenerate 5 HP per second
+      }
 
       const flItemIndex = player.inventory.findIndex(i => i.type === Types.ItemType.FLASHLIGHT && (i.id === player.equippedLeftId || i.id === player.equippedRightId || i.id === player.equippedPocketId));
       const hasFl = flItemIndex !== -1;
