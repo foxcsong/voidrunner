@@ -55,6 +55,26 @@ export const GameManual: React.FC<GameManualProps> = ({ onClose }) => {
                     </div>
                 </section>
 
+                <section className="space-y-4">
+                    <h3 className="text-orange-500 font-bold tracking-widest uppercase border-l-4 border-orange-700 pl-4 py-1">战斗指南 (Combat Manual)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800">
+                            <h4 className="text-white font-bold text-xs mb-2 flex items-center gap-2">🔪 战术匕首 (Knife)</h4>
+                            <ul className="text-[10px] text-zinc-500 space-y-1">
+                                <li>• <span className="text-zinc-300">特点：</span> 近身格斗，不消耗任何弹药。</li>
+                                <li>• <span className="text-zinc-300">优势：</span> 攻击频率快，是弹尽粮绝时的可靠伙伴。</li>
+                            </ul>
+                        </div>
+                        <div className="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800">
+                            <h4 className="text-white font-bold text-xs mb-2 flex items-center gap-2">🔫 虚空手枪 (Gun)</h4>
+                            <ul className="text-[10px] text-zinc-500 space-y-1">
+                                <li>• <span className="text-zinc-300">特点：</span> 远程打击，需要消耗 **备用弹夹**。</li>
+                                <li>• <span className="text-zinc-300">优势：</span> 伤害极高，可安全低损耗地清理远处威胁。</li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
+
                 <section className="bg-zinc-900/40 p-6 rounded-2xl border border-zinc-800">
                     <h3 className="text-cyan-500 font-bold tracking-widest uppercase mb-4 flex items-center gap-2">
                         <span>通关目标:</span>
