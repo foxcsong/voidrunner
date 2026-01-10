@@ -79,6 +79,7 @@ export interface GameState {
   isPaused: boolean;
   activeChestId: string | null;
   draggingItemId: string | null;
+  bossChaseActive: boolean;
   monsterKills: number;
   victorySpeech?: string;
 }

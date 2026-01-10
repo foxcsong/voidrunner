@@ -468,7 +468,7 @@ const App: React.FC = () => {
 
     setGameState({
       player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false, hitFlash: 0 },
-      map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '', message: '发现近处有补给箱，请上前打开获取生存物资。', messageTimeout: 10, chaseActive: false, survivalTime: 0, monsterKills: 0, isPaused: false, activeChestId: null, draggingItemId: null
+      map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '', message: '发现近处有补给箱，请上前打开获取生存物资。', messageTimeout: 10, chaseActive: false, bossChaseActive: false, survivalTime: 0, monsterKills: 0, isPaused: false, activeChestId: null, draggingItemId: null
     });
 
     // Narrative transition
@@ -1100,6 +1100,8 @@ const App: React.FC = () => {
 
       // 11. CHASE ACTIVE TRACKING & AI TRIGGER
       const chaseActive = nextEntities.some(e => (e.type === Types.EntityType.MONSTER || e.type === Types.EntityType.BOSS) && e.data.state === 'CHASING');
+      const bossChaseActive = nextEntities.some(e => e.type === Types.EntityType.BOSS && e.data.state === 'CHASING');
+
       if (!prev.chaseActive && chaseActive) {
         triggerAIEvent("那种令人毛骨悚然的直觉来了……有什么东西盯上我了……他在靠近……");
       }
@@ -1150,6 +1152,7 @@ const App: React.FC = () => {
         message: nextMessage,
         activeChestId,
         chaseActive,
+        bossChaseActive,
         monsterKills,
         isGameOver: player.health <= 0,
         isVictory: false,
@@ -1515,6 +1518,21 @@ const App: React.FC = () => {
 
     if (player.isFlashlightOn) {
       ctx.globalAlpha = 0.04; ctx.fillStyle = '#fff9c4'; ctx.fillRect(0, 0, ww, wh); ctx.globalAlpha = 1.0;
+    }
+
+    // BOSS CHASE OVERLAY (Breathing Effect)
+    if (gameState.bossChaseActive) {
+      const time = performance.now() * 0.002;
+      const opacity = 0.15 + Math.sin(time) * 0.10; // Oscillate between 0.05 and 0.25
+      ctx.fillStyle = `rgba(0, 0, 0, ${opacity})`;
+      ctx.fillRect(0, 0, ww, wh);
+
+      // Optional: Red vignette edges
+      const grad = ctx.createRadialGradient(ww / 2, wh / 2, wh / 2, ww / 2, wh / 2, wh);
+      grad.addColorStop(0, 'rgba(50, 0, 0, 0)');
+      grad.addColorStop(1, `rgba(80, 0, 0, ${opacity * 1.5})`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, ww, wh);
     }
   }, [gameState, screen]);
 
