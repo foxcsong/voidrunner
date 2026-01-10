@@ -1474,47 +1474,7 @@ const App: React.FC = () => {
         <div className="flex flex-col gap-6 w-96 relative z-10">
 
           {/* RELOAD BUTTON - FIXED POSITION BOTTOM RIGHT */}
-          {(() => {
-            const hasGun = player.equippedRightId && player.inventory.find(i => i.id === player.equippedRightId && i.type === Types.ItemType.GUN);
-            const hasAmmo = player.inventory.some(i => i.type === Types.ItemType.AMMO);
-            // Only show if gun not full? User asked for "when has ammo and holding gun".
-            // Let's behave standard: show if holding gun + has ammo. 
-            // Maybe disable if full? User said "Press to reload", logic says full gun doesn't need reload.
-            // But let's strictly follow "When holding gun and has ammo, button appears".
 
-            if (hasGun && hasAmmo) {
-              const isReloading = player.actionState === 'RELOADING';
-              return (
-                <button
-                  onClick={() => {
-                    if (isReloading) return;
-                    setGameState(prev => {
-                      if (!prev) return null;
-                      return {
-                        ...prev,
-                        player: {
-                          ...prev.player,
-                          actionState: 'RELOADING',
-                          actionTimer: 1.0
-                        },
-                        message: '正在换弹...',
-                        messageTimeout: 1.0
-                      };
-                    });
-                  }}
-                  className={`fixed bottom-32 right-8 z-50 w-20 h-20 rounded-full border-4 flex items-center justify-center transition-all active:scale-95 shadow-lg ${isReloading ? 'bg-zinc-800 border-zinc-600 opacity-50 cursor-not-allowed' : 'bg-yellow-900/80 border-yellow-500 hover:bg-yellow-800 cursor-pointer animate-fade-in'}`}
-                >
-                  <div className="flex flex-col items-center">
-                    <div className={`text-2xl mb-1 ${isReloading ? 'animate-spin' : ''}`}>♻️</div>
-                    <div className="text-[9px] font-black uppercase tracking-widest text-yellow-500">
-                      {isReloading ? '...' : 'RELOAD'}
-                    </div>
-                  </div>
-                </button>
-              );
-            }
-            return null;
-          })()}
 
           <button onClick={() => initGame(false)} className="group relative overflow-hidden px-8 py-5 border border-zinc-700 bg-zinc-900/50 hover:bg-zinc-50 hover:text-black transition-all">
             <div className="flex justify-between items-center font-black uppercase tracking-widest text-sm">
@@ -1908,6 +1868,45 @@ const App: React.FC = () => {
             </>
           ) : <div className="text-zinc-700 text-2xl">⚔️</div>}
         </button>
+
+        {/* RELOAD BUTTON - FIXED POSITION BOTTOM RIGHT (IN GAME) */}
+        {(() => {
+          const hasGun = player.equippedRightId && player.inventory.find(i => i.id === player.equippedRightId && i.type === Types.ItemType.GUN);
+          const hasAmmo = player.inventory.some(i => i.type === Types.ItemType.AMMO);
+
+          if (hasGun && hasAmmo) {
+            const isReloading = player.actionState === 'RELOADING';
+            return (
+              <button
+                onClick={() => {
+                  if (isReloading) return;
+                  setGameState(prev => {
+                    if (!prev) return null;
+                    return {
+                      ...prev,
+                      player: {
+                        ...prev.player,
+                        actionState: 'RELOADING',
+                        actionTimer: 1.0
+                      },
+                      message: '正在换弹...',
+                      messageTimeout: 1.0
+                    };
+                  });
+                }}
+                className={`fixed bottom-32 right-8 z-50 w-20 h-20 rounded-full border-4 flex items-center justify-center transition-all active:scale-95 shadow-lg ${isReloading ? 'bg-zinc-800 border-zinc-600 opacity-50 cursor-not-allowed' : 'bg-yellow-900/80 border-yellow-500 hover:bg-yellow-800 cursor-pointer animate-fade-in'}`}
+              >
+                <div className="flex flex-col items-center">
+                  <div className={`text-2xl mb-1 ${isReloading ? 'animate-spin' : ''}`}>♻️</div>
+                  <div className="text-[9px] font-black uppercase tracking-widest text-yellow-500">
+                    {isReloading ? '...' : 'RELOAD'}
+                  </div>
+                </div>
+              </button>
+            );
+          }
+          return null;
+        })()}
 
       </div>
 
