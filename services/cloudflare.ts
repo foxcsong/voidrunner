@@ -38,7 +38,7 @@ export const cloudflare = {
         return await res.json();
     },
 
-    async submitRecord(data: { userId: number, clearTime: number, monsterKills: number, extraStats?: any }) {
+    async submitRecord(data: { userId: number, clearTime: number, monsterKills: number, depth?: number, extraStats?: any }) {
         const res = await fetch('/api/leaderboard', {
             method: 'POST',
             body: JSON.stringify(data),

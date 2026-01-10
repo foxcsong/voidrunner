@@ -267,7 +267,7 @@ const App: React.FC = () => {
     return p;
   };
 
-  const initGame = useCallback(async (loadExisting = false) => {
+  const initGame = useCallback(async (loadExisting = false, nextLevel = false, prevPlayer: Types.Player | null = null, currentLevel = 1) => {
     // Start BGM immediately on interaction
     playBgm();
 
@@ -295,7 +295,9 @@ const App: React.FC = () => {
     setScreen('LOADING_AI');
 
     // Step 1: Generate Maze
-    const map = MazeGen.generateMaze(Constants.MAP_SIZE);
+    // SCALING: Map Scale
+    const mapSize = Math.min(60, Constants.MAP_SIZE + (currentLevel - 1) * 2);
+    const map = MazeGen.generateMaze(mapSize);
     const deadEnds = MazeGen.findDeadEnds(map);
 
     // Step 2: Skip AI Layout, go straight to procedural with improved weighting
@@ -315,7 +317,7 @@ const App: React.FC = () => {
     });
 
     // Find the furthest dead end for the EXIT
-    let exitPos = { x: Constants.MAP_SIZE - 2, y: Constants.MAP_SIZE - 2 };
+    let exitPos = { x: mapSize - 2, y: mapSize - 2 };
     let maxDist = 0;
     deadEnds.forEach(pos => {
       const dist = Math.sqrt((pos.x - 1.5) ** 2 + (pos.y - 1.5) ** 2);
@@ -400,9 +402,11 @@ const App: React.FC = () => {
     }
 
     // Add extra monsters in corridors
-    for (let k = 0; k < 10; k++) {
-      const rx = Math.floor(Math.random() * Constants.MAP_SIZE);
-      const ry = Math.floor(Math.random() * Constants.MAP_SIZE);
+    // SCALING: More monsters
+    const monsterCount = 10 + Math.floor((currentLevel - 1) * 2);
+    for (let k = 0; k < monsterCount; k++) {
+      const rx = Math.floor(Math.random() * mapSize);
+      const ry = Math.floor(Math.random() * mapSize);
       if (map[ry][rx] === 0 && Math.sqrt((rx - startX) ** 2 + (ry - startY) ** 2) > 8) {
         entities.push({
           id: `monster-walk-${k}`, x: rx + 0.5, y: ry + 0.5, type: Types.EntityType.MONSTER, health: 75,
@@ -426,7 +430,7 @@ const App: React.FC = () => {
         for (let dx = -r; dx <= r; dx++) {
           const tx = exitPos.x + dx;
           const ty = exitPos.y + dy;
-          if (tx > 0 && tx < Constants.MAP_SIZE && ty > 0 && ty < Constants.MAP_SIZE && map[ty][tx] === 0) {
+          if (tx > 0 && tx < mapSize && ty > 0 && ty < mapSize && map[ty][tx] === 0) {
             // Check if it's not the exit itself
             if (tx !== exitPos.x || ty !== exitPos.y) {
               bossSpawnPos = { x: tx, y: ty };
@@ -445,9 +449,9 @@ const App: React.FC = () => {
       x: bossSpawnPos.x + 0.5,
       y: bossSpawnPos.y + 0.5,
       type: Types.EntityType.BOSS,
-      health: 1000, // 10x+ health
+      health: 1000 * Math.pow(1.2, currentLevel - 1), // SCALING: Boss HP
       data: {
-        maxHealth: 1000,
+        maxHealth: 1000 * Math.pow(1.2, currentLevel - 1),
         state: 'PATROL',
         patrolCenter: { x: bossSpawnPos.x + 0.5, y: bossSpawnPos.y + 0.5 },
         nextTarget: null,
@@ -467,8 +471,19 @@ const App: React.FC = () => {
     if (randomMonster) { randomMonster.data.hasKey = true; }
 
     setGameState({
-      player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false, hitFlash: 0 },
-      map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '', message: '发现近处有补给箱，请上前打开获取生存物资。', messageTimeout: 10, chaseActive: false, bossChaseActive: false, survivalTime: 0, monsterKills: 0, isPaused: false, activeChestId: null, draggingItemId: null
+      player: nextLevel && prevPlayer ? {
+        ...prevPlayer, x: 1.5, y: 1.5, hitFlash: 0,
+        // Small heal reward for next level
+        health: Math.min(100, prevPlayer.health + 20),
+        hunger: Math.min(100, prevPlayer.hunger + 20),
+        hydration: Math.min(100, prevPlayer.hydration + 20)
+      } : { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false, hitFlash: 0 },
+      map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '',
+      message: nextLevel ? `第 ${currentLevel} 层虚空：深度 ${currentLevel * 1200} 米` : '发现近处有补给箱，请上前打开获取生存物资。',
+      messageTimeout: 10, chaseActive: false, bossChaseActive: false, survivalTime: nextLevel && gameState ? gameState.survivalTime : 0,
+      monsterKills: nextLevel && gameState ? gameState.monsterKills : 0,
+      currentLevel,
+      isPaused: false, activeChestId: null, draggingItemId: null
     });
 
     // Narrative transition
@@ -1716,11 +1731,15 @@ const App: React.FC = () => {
   }
 
   if (screen === 'LOADING_AI') {
-    return <FallingVoid onComplete={() => {
-      if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
-      setScreen('PLAYING');
-      damageNumbersRef.current = [];
-    }} />;
+    return (
+      <div className="fixed inset-0 flex flex-col items-center justify-center pointer-events-none z-[100]">
+        <h2 className="text-6xl md:text-9xl font-black text-white tracking-widest animate-pulse opacity-20">VOID</h2>
+        <div className="mt-8 text-xs text-zinc-500 tracking-[1em] uppercase animate-bounce">Generating Neural Map...</div>
+        <div className="absolute bottom-10 w-64 h-1 bg-zinc-900 rounded-full overflow-hidden">
+          <div className="h-full bg-zinc-500 animate-[loading_14s_ease-in-out_forwards]" />
+        </div>
+      </div>
+    );
   }
 
   if (!gameState) return null;
@@ -2116,29 +2135,58 @@ const App: React.FC = () => {
       )}
 
       {gameState.isVictory && (
-        <div className="fixed inset-0 bg-zinc-950 z-[99999] flex flex-col items-center justify-center text-center p-10 animate-fade-in">
-          <div className="absolute inset-0 bg-blue-500/10 pointer-events-none" />
-          <h1 className="text-8xl font-black text-cyan-400 mb-4 animate-pulse uppercase leading-none tracking-tighter drop-shadow-[0_0_20px_rgba(34,211,238,0.5)]">成功撤离</h1>
-          <p className="text-zinc-500 mb-8 italic text-sm tracking-[0.5em] font-bold uppercase">"核心系统已受控 // 任务圆满成功"</p>
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/95 animate-fade-in p-8 text-center select-none">
+          <div className="max-w-md w-full border border-yellow-600 bg-yellow-950/20 p-8 rounded-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-yellow-500 animate-pulse" />
+            <h2 className="text-4xl font-black text-yellow-500 mb-2 tracking-widest uppercase">{'>>>'} 区域肃清</h2>
+            <p className="text-zinc-400 text-xs tracking-widest uppercase mb-8">Level {gameState.currentLevel} Cleared</p>
 
-          {gameState.victorySpeech && (
-            <div className="max-w-md bg-zinc-900/80 border-l-4 border-cyan-500 p-6 mb-12 text-left animate-fade-in">
-              <div className="text-cyan-500 text-[10px] uppercase tracking-widest mb-2 font-bold font-mono">虚空低语 // VOID_ECHO</div>
-              <p className="text-zinc-300 italic text-sm leading-relaxed">"{gameState.victorySpeech}"</p>
+            <div className="space-y-4 font-mono text-sm mb-8">
+              <div className="flex justify-between border-b border-zinc-800 pb-2">
+                <span className="text-zinc-500">撤离耗时</span>
+                <span className="text-yellow-400 font-bold">{gameState.survivalTime.toFixed(1)}s</span>
+              </div>
+              <div className="flex justify-between border-b border-zinc-800 pb-2">
+                <span className="text-zinc-500">击杀异种</span>
+                <span className="text-red-500 font-bold">{gameState.monsterKills}</span>
+              </div>
+              <div className="text-zinc-500 text-xs italic mt-4 px-4 leading-relaxed">
+                "{gameState.victorySpeech}"
+              </div>
             </div>
-          )}
 
-          <div className="grid grid-cols-2 gap-4 mb-12 w-full max-w-sm">
-            <div className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-2xl">
-              <div className="text-zinc-500 text-[9px] uppercase tracking-widest mb-1 font-bold">撤离时长</div>
-              <div className="text-2xl text-white font-mono">{Math.floor(gameState.survivalTime)}s</div>
-            </div>
-            <div className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-2xl">
-              <div className="text-zinc-500 text-[9px] uppercase tracking-widest mb-1 font-bold">虚空收割</div>
-              <div className="text-2xl text-red-500 font-mono">{gameState.monsterKills} 💀</div>
+            <div className="flex flex-col gap-4">
+              <button
+                onClick={() => initGame(false, true, gameState.player, gameState.currentLevel + 1)}
+                className="w-full py-4 bg-red-900/40 border border-red-800 hover:bg-red-800 hover:text-white transition-all rounded-xl font-bold uppercase tracking-widest text-red-400 group relative overflow-hidden"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-red-500/10 to-transparent translate-x-[-100%] group-hover:animate-shine" />
+                <div className="flex flex-col items-center">
+                  <span>⚔️ 深入虚空 (进入第 {gameState.currentLevel + 1} 层)</span>
+                  <span className="text-[9px] opacity-60 mt-1">难度提升 | 状态保留 | 奖励生命</span>
+                </div>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (currentUser) {
+                    cloudflare.submitRecord({
+                      userId: currentUser.id,
+                      clearTime: gameState.survivalTime,
+                      monsterKills: gameState.monsterKills,
+                      depth: gameState.currentLevel
+                    }).catch(console.error);
+                  }
+                  setScreen('MENU');
+                  setGameState(null);
+                  setTimeout(() => setShowLeaderboard(true), 500);
+                }}
+                className="w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-all rounded-xl font-bold uppercase tracking-widest text-xs"
+              >
+                🚀 携带战利品撤离 (提交成绩)
+              </button>
             </div>
           </div>
-          <button onClick={returnToMenu} className="px-12 py-5 bg-cyan-600 border border-cyan-400 text-white hover:bg-cyan-500 transition-all uppercase font-black tracking-[0.3em] rounded-xl active:scale-95 shadow-lg shadow-cyan-900/40">返回主基地</button>
         </div>
       )}
 

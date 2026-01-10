@@ -81,5 +81,6 @@ export interface GameState {
   draggingItemId: string | null;
   bossChaseActive: boolean;
   monsterKills: number;
+  currentLevel: number;
   victorySpeech?: string;
 }
