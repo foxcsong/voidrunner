@@ -21,6 +21,7 @@ export interface InventoryItem {
 export enum EntityType {
   PLAYER = 'PLAYER',
   MONSTER = 'MONSTER',
+  BOSS = 'BOSS',
   CHEST = 'CHEST',
   EXIT_GATE = 'EXIT_GATE'
 }

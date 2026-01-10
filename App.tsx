@@ -400,6 +400,45 @@ const App: React.FC = () => {
       data: { isLocked: true }
     });
 
+    // SPAWN BOSS NEAR EXIT
+    // Find a valid spot near the exit (within 5 cells)
+    let bossSpawnPos = { x: exitPos.x, y: exitPos.y };
+    for (let r = 2; r <= 5; r++) {
+      let found = false;
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          const tx = exitPos.x + dx;
+          const ty = exitPos.y + dy;
+          if (tx > 0 && tx < Constants.MAP_SIZE && ty > 0 && ty < Constants.MAP_SIZE && map[ty][tx] === 0) {
+            // Check if it's not the exit itself
+            if (tx !== exitPos.x || ty !== exitPos.y) {
+              bossSpawnPos = { x: tx, y: ty };
+              found = true;
+              break;
+            }
+          }
+        }
+        if (found) break;
+      }
+      if (found) break;
+    }
+
+    entities.push({
+      id: 'final-boss',
+      x: bossSpawnPos.x + 0.5,
+      y: bossSpawnPos.y + 0.5,
+      type: Types.EntityType.BOSS,
+      health: 1000, // 10x+ health
+      data: {
+        maxHealth: 1000,
+        state: 'PATROL',
+        patrolCenter: { x: bossSpawnPos.x + 0.5, y: bossSpawnPos.y + 0.5 },
+        nextTarget: null,
+        lastPathUpdate: 0,
+        hitFlash: 0
+      }
+    });
+
     // Keys distribution
     const chests = entities.filter(e => e.type === Types.EntityType.CHEST && e.id !== 'starter-chest');
     const shuffledChests = chests.sort(() => Math.random() - 0.5);
@@ -538,10 +577,12 @@ const App: React.FC = () => {
       });
 
       newEntities = newEntities.map(e => {
-        if (e.type === Types.EntityType.MONSTER && e.health! > 0) {
+        if ((e.type === Types.EntityType.MONSTER || e.type === Types.EntityType.BOSS) && e.health! > 0) {
           const dist = Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2);
+          // Boss has larger hit radius
+          const hitRadius = e.type === Types.EntityType.BOSS ? 1.2 : 0.8;
           const hasLos = isLineOfSightClear(player.x, player.y, e.x, e.y, gameState.map);
-          if (dist < 0.8 && hasLos) {
+          if (dist < hitRadius && hasLos) {
             spawnDamageNumber(e.x, e.y - 0.5, 40, '#fbbf24');
             return { ...e, health: e.health! - 40, data: { ...e.data, hitFlash: 0.2, state: 'CHASING' } };
           }
@@ -556,30 +597,49 @@ const App: React.FC = () => {
         return;
       }
 
-      const targetMonster = newEntities.find(e => e.type === Types.EntityType.MONSTER && e.health! > 0 && Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2) < 0.8);
+      const targetMonster = newEntities.find(e => (e.type === Types.EntityType.MONSTER || e.type === Types.EntityType.BOSS) && e.health! > 0 && Math.sqrt((e.x - clickX) ** 2 + (e.y - clickY) ** 2) < (e.type === Types.EntityType.BOSS ? 1.2 : 0.8));
       if (targetMonster) {
         const distToPlayer = Math.sqrt((targetMonster.x - player.x) ** 2 + (targetMonster.y - player.y) ** 2);
         const hasLos = isLineOfSightClear(player.x, player.y, targetMonster.x, targetMonster.y, gameState.map);
         if (distToPlayer < 2.0 && hasLos) {
-          attackMade = true;
-          setGameState(prev => {
-            if (!prev) return null;
-            let nextInv = prev.player.inventory.map(i => i.id === knife.id ? { ...i, durability: Math.max(0, i.durability! - 2) } : i);
-            const updatedKnife = nextInv.find(i => i.id === knife.id);
-            if (updatedKnife && updatedKnife.durability! <= 0) {
-              nextInv = nextInv.filter(i => i.id !== knife.id);
-              if (prev.player.equippedLeftId === knife.id) prev.player.equippedLeftId = null;
-              if (prev.player.equippedRightId === knife.id) prev.player.equippedRightId = null;
-            }
-            return {
-              ...prev,
-              player: { ...prev.player, inventory: nextInv, actionState: 'ATTACK_KNIFE', actionTimer: 0.2 },
-              message: '近战格斗',
-              messageTimeout: 0.5
-            };
-          });
-          newEntities = newEntities.map(e => e.id === targetMonster.id ? { ...e, health: e.health! - 25, data: { ...e.data, hitFlash: 0.2, state: 'CHASING' } } : e);
-          spawnDamageNumber(targetMonster.x, targetMonster.y - 0.5, 25, '#ffffff');
+          // BOSS IMMUNITY LOGIC
+          if (targetMonster.type === Types.EntityType.BOSS && (targetMonster.health! > targetMonster.data.maxHealth! * 0.5)) {
+            setGameState(prev => prev ? { ...prev, message: '警告：装甲未破除！匕首无法造成伤害！请使用热武器！', messageTimeout: 2 } : null);
+            // No attack made flag set, effectively cancelling the attack cost? Or just cost durability but no damage?
+            // Let's consume durability to teach a lesson, but deal 0 damage.
+            attackMade = true;
+            setGameState(prev => {
+              if (!prev) return null;
+              let nextInv = prev.player.inventory.map(i => i.id === knife.id ? { ...i, durability: Math.max(0, i.durability! - 2) } : i);
+              return {
+                ...prev,
+                player: { ...prev.player, inventory: nextInv, actionState: 'ATTACK_KNIFE', actionTimer: 0.2 },
+                message: '警告：装甲未破除！匕首无法造成伤害！',
+                messageTimeout: 2
+              };
+            });
+            spawnDamageNumber(targetMonster.x, targetMonster.y - 0.5, 0, '#888888');
+          } else {
+            attackMade = true;
+            setGameState(prev => {
+              if (!prev) return null;
+              let nextInv = prev.player.inventory.map(i => i.id === knife.id ? { ...i, durability: Math.max(0, i.durability! - 2) } : i);
+              const updatedKnife = nextInv.find(i => i.id === knife.id);
+              if (updatedKnife && updatedKnife.durability! <= 0) {
+                nextInv = nextInv.filter(i => i.id !== knife.id);
+                if (prev.player.equippedLeftId === knife.id) prev.player.equippedLeftId = null;
+                if (prev.player.equippedRightId === knife.id) prev.player.equippedRightId = null;
+              }
+              return {
+                ...prev,
+                player: { ...prev.player, inventory: nextInv, actionState: 'ATTACK_KNIFE', actionTimer: 0.2 },
+                message: '近战格斗',
+                messageTimeout: 0.5
+              };
+            });
+            newEntities = newEntities.map(e => e.id === targetMonster.id ? { ...e, health: e.health! - 25, data: { ...e.data, hitFlash: 0.2, state: 'CHASING' } } : e);
+            spawnDamageNumber(targetMonster.x, targetMonster.y - 0.5, 25, '#ffffff');
+          }
         }
       }
     }
@@ -793,7 +853,7 @@ const App: React.FC = () => {
 
       let killsInThisFrame = 0;
       let nextEntities = prev.entities.map(e => {
-        if (e.type !== Types.EntityType.MONSTER) return e;
+        if (e.type !== Types.EntityType.MONSTER && e.type !== Types.EntityType.BOSS) return e;
 
         if (e.health! <= 0) {
           // KEY DROP LOGIC
@@ -826,15 +886,35 @@ const App: React.FC = () => {
 
         const nextE = { ...e, data: nextData };
 
+        // --- BOSS AI LOGIC ---
+        if (nextE.type === Types.EntityType.BOSS) {
+          // Patrol logic if far away
+          if (dP > 12 && nextE.data.state !== 'CHASING') {
+            if (nextE.data.state !== 'PATROL') nextE.data.state = 'PATROL';
+          } else {
+            nextE.data.state = 'CHASING';
+          }
+        } else {
+          // Normal monster logic
+          if (dP < 8) nextE.data.state = 'CHASING';
+        }
 
-        if (nextE.data.state === 'IDLE') {
+        // Define speed
+        let enemySpeed = 2.5;
+        if (nextE.type === Types.EntityType.BOSS) {
+          enemySpeed = (nextE.health! <= nextE.data.maxHealth! * 0.5) ? 3.5 : 2.0; // Slow but speeds up in rage
+        } else {
+          enemySpeed = 3.0; // Normal monster speed
+        }
+
+        if (nextE.data.state === 'IDLE' || nextE.data.state === 'PATROL') {
           // PATROL LOGIC
           if (!nextE.data.nextTarget || (Math.sqrt((nextE.x - nextE.data.nextTarget.x) ** 2 + (nextE.y - nextE.data.nextTarget.y) ** 2) < 0.2)) {
-            // Pick random point near spawn
+            // Pick random point near spawn or patrolCenter
             if (time - (nextE.data.lastPathUpdate || 0) > 3000) { // Wait a bit before moving again
-              const rx = nextE.data.spawnX + (Math.random() - 0.5) * 6;
-              const ry = nextE.data.spawnY + (Math.random() - 0.5) * 6;
-              const step = getNextPathStep(nextE.x, nextE.y, rx, ry, prev.map);
+              const targetX = nextE.type === Types.EntityType.BOSS ? nextE.data.patrolCenter.x + (Math.random() - 0.5) * 6 : nextE.data.spawnX + (Math.random() - 0.5) * 6;
+              const targetY = nextE.type === Types.EntityType.BOSS ? nextE.data.patrolCenter.y + (Math.random() - 0.5) * 6 : nextE.data.spawnY + (Math.random() - 0.5) * 6;
+              const step = getNextPathStep(nextE.x, nextE.y, targetX, targetY, prev.map);
               if (step) {
                 nextE.data.nextTarget = { x: step[0] + 0.5, y: step[1] + 0.5 };
                 nextE.data.lastPathUpdate = time;
@@ -848,7 +928,7 @@ const App: React.FC = () => {
           // Relax LOS if very close (2.0m), essentially "hearing/smelling" range or just proximity
           if (dP < 2.0) {
             detected = true;
-          } else if (dP < 10.0 && isLineOfSightClear(player.x, player.y, nextE.x, nextE.y, prev.map)) {
+          } else if (dP < (nextE.type === Types.EntityType.BOSS ? 12.0 : 10.0) && isLineOfSightClear(player.x, player.y, nextE.x, nextE.y, prev.map)) {
             detected = true;
           }
           // 2. Auditory Detection (Sprinting near monster)
@@ -862,7 +942,7 @@ const App: React.FC = () => {
           }
 
         } else if (nextE.data.state === 'CHASING') {
-          if (dP > 12.0) { // Lost interest if too far
+          if (dP > (nextE.type === Types.EntityType.BOSS ? 15.0 : 12.0)) { // Lost interest if too far
             nextE.data.state = 'RETURNING';
             nextE.data.nextTarget = null;
           } else {
@@ -881,7 +961,7 @@ const App: React.FC = () => {
         } else if (nextE.data.state === 'RETURNING') {
           // Can re-detect during return
           let detected = false;
-          if (dP < 10.0 && isLineOfSightClear(player.x, player.y, nextE.x, nextE.y, prev.map)) detected = true;
+          if (dP < (nextE.type === Types.EntityType.BOSS ? 12.0 : 10.0) && isLineOfSightClear(player.x, player.y, nextE.x, nextE.y, prev.map)) detected = true;
           if (!detected && dP < 6.0 && player.sprinting) detected = true;
 
           if (detected) {
@@ -891,7 +971,9 @@ const App: React.FC = () => {
             nextE.data.state = 'IDLE'; nextE.data.nextTarget = null;
           } else {
             if (time - nextE.data.lastPathUpdate > 1000 || !nextE.data.nextTarget) {
-              const step = getNextPathStep(nextE.x, nextE.y, nextE.data.spawnX, nextE.data.spawnY, prev.map);
+              const targetX = nextE.type === Types.EntityType.BOSS ? nextE.data.patrolCenter.x : nextE.data.spawnX;
+              const targetY = nextE.type === Types.EntityType.BOSS ? nextE.data.patrolCenter.y : nextE.data.spawnY;
+              const step = getNextPathStep(nextE.x, nextE.y, targetX, targetY, prev.map);
               if (step) nextE.data.nextTarget = { x: step[0] + 0.5, y: step[1] + 0.5 };
               nextE.data.lastPathUpdate = time;
             }
@@ -900,8 +982,7 @@ const App: React.FC = () => {
 
         if (nextE.data.nextTarget && nextE.data.hitFlash <= 0) {
           const ang = Math.atan2(nextE.data.nextTarget.y - nextE.y, nextE.data.nextTarget.x - nextE.x);
-          const speed = nextE.data.state === 'CHASING' ? 3.5 : 1.5;
-          const ms = speed * delta;
+          const ms = enemySpeed * delta;
 
           // Simple collision check for monster vs player (prevents clipping)
           const nextMx = nextE.x + Math.cos(ang) * ms;
@@ -918,14 +999,14 @@ const App: React.FC = () => {
         // Distance check: < 1.5 means "touching" or sufficiently close
         const distFinal = Math.sqrt((nextE.x - player.x) ** 2 + (nextE.y - player.y) ** 2);
         if (distFinal < 1.5) {
-          player.health -= 40 * delta; // Constant damage while touching
+          player.health -= (nextE.type === Types.EntityType.BOSS ? 60 : 40) * delta; // Constant damage while touching
           player.hitFlash = 0.5;
         }
         return nextE;
       }).filter(Boolean) as Types.Entity[];
 
       // 11. CHASE ACTIVE TRACKING & AI TRIGGER
-      const chaseActive = nextEntities.some(e => e.type === Types.EntityType.MONSTER && e.data.state === 'CHASING');
+      const chaseActive = nextEntities.some(e => (e.type === Types.EntityType.MONSTER || e.type === Types.EntityType.BOSS) && e.data.state === 'CHASING');
       if (!prev.chaseActive && chaseActive) {
         triggerAIEvent("那种令人毛骨悚然的直觉来了……有什么东西盯上我了……他在靠近……");
       }
@@ -1132,12 +1213,17 @@ const App: React.FC = () => {
     // Add Entities
     entities.forEach(e => {
       if (Math.abs(e.x - player.x) > rangeX || Math.abs(e.y - player.y) > rangeY) return;
-      if (!e.type || (e.type === Types.EntityType.MONSTER && e.health! <= 0)) return;
+      if (!e.type || (e.type === Types.EntityType.MONSTER && e.health! <= 0) || (e.type === Types.EntityType.BOSS && e.health! <= 0)) return;
 
       renderList.push({
         type: 'ENTITY',
         y: e.y * s,
         draw: () => {
+          const cx = e.x * s;
+          const cy = e.y * s;
+          const isBoss = e.type === Types.EntityType.BOSS;
+          const entitySize = isBoss ? 64 : 32; // Larger size for Boss
+
           if (e.type === Types.EntityType.CHEST) {
             const size = 32;
             const img = e.data.isOpen ? chestOpenImgRef.current : chestClosedImgRef.current;
@@ -1147,700 +1233,683 @@ const App: React.FC = () => {
               ctx.fillStyle = e.data.isOpen ? '#3a2601' : '#a16207';
               ctx.fillRect(e.x * s - 14, e.y * s - 14, 28, 28);
             }
-          } else if (e.type === Types.EntityType.MONSTER) {
-            const size = 50;
-            if (monsterImgRef.current) {
-              ctx.save();
-              // Hit Flash Effect
-              if (e.data.hitFlash > 0) {
-                // Simple red tint via composite or filter simulation
-                ctx.globalAlpha = 0.7;
-                ctx.fillStyle = '#ef4444';
-                ctx.beginPath(); ctx.arc(e.x * s, e.y * s - 15, size / 2, 0, Math.PI * 2); ctx.fill();
-                ctx.globalAlpha = 1.0;
-              }
 
-              // Simple bounce animation for monster
-              const bounce = Math.sin(performance.now() * 0.005 + e.x) * 3;
-              // Shake if hit
-              const shake = e.data.hitFlash > 0 ? (Math.random() - 0.5) * 5 : 0;
-
-              ctx.drawImage(monsterImgRef.current, e.x * s - size / 2 + shake, e.y * s - size / 2 - 15 + bounce, size, size);
-              ctx.restore();
-            } else {
-              ctx.fillStyle = e.data.hitFlash > 0 ? '#ef4444' : '#7f1d1d';
-              ctx.beginPath(); ctx.arc(e.x * s, e.y * s, 15, 0, Math.PI * 2); ctx.fill();
-            }
-          } else if (e.type === Types.EntityType.EXIT_GATE) {
-            const size = 64;
-            const time = performance.now() * 0.003;
-            ctx.save();
-            ctx.translate(e.x * s, e.y * s);
-
-            // Energy Field
-            const grad = ctx.createRadialGradient(0, 0, 5, 0, 0, 40 + Math.sin(time) * 5);
-            grad.addColorStop(0, 'rgba(0, 100, 255, 0.6)');
-            grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-            ctx.fillStyle = grad;
-            ctx.beginPath(); ctx.arc(0, 0, 45, 0, Math.PI * 2); ctx.fill();
-
-            // Lock Icon
-            ctx.font = '30px serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.shadowBlur = 10;
-            ctx.shadowColor = '#0cf';
-            ctx.fillText('🔒', 0, 0);
-
-            // Rotating Seals
-            ctx.rotate(time);
-            ctx.strokeStyle = 'rgba(0, 200, 255, 0.4)';
-            ctx.setLineDash([5, 10]);
-            ctx.beginPath(); ctx.arc(0, 0, 30, 0, Math.PI * 2); ctx.stroke();
-
+            ctx.drawImage(monsterImgRef.current, e.x * s - size / 2 + shake, e.y * s - size / 2 - 15 + bounce, size, size);
             ctx.restore();
+          } else {
+            ctx.fillStyle = e.data.hitFlash > 0 ? '#ef4444' : '#7f1d1d';
+            ctx.beginPath(); ctx.arc(e.x * s, e.y * s, 15, 0, Math.PI * 2); ctx.fill();
           }
-        }
-      });
-    });
+        } else if(e.type === Types.EntityType.EXIT_GATE) {
+        const size = 64;
+        const time = performance.now() * 0.003;
+        ctx.save();
+        ctx.translate(e.x * s, e.y * s);
 
-    // Add Player
-    renderList.push({
-      type: 'PLAYER',
-      y: player.y * s,
-      draw: () => {
-        const isMoving = !!(keysRef.current['KeyW'] || keysRef.current['KeyS'] || keysRef.current['KeyA'] || keysRef.current['KeyD'] || keysRef.current['ArrowUp'] || keysRef.current['ArrowDown'] || keysRef.current['ArrowLeft'] || keysRef.current['ArrowRight']);
-        const bob = isMoving ? Math.sin(performance.now() * 0.015) * 4 : Math.sin(performance.now() * 0.003) * 2;
-        const shake = isMoving ? Math.cos(performance.now() * 0.015) * 0.05 : 0;
+        // Energy Field
+        const grad = ctx.createRadialGradient(0, 0, 5, 0, 0, 40 + Math.sin(time) * 5);
+        grad.addColorStop(0, 'rgba(0, 100, 255, 0.6)');
+        grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(0, 0, 45, 0, Math.PI * 2); ctx.fill();
 
-        if (playerImgRef.current) {
-          ctx.save();
-          ctx.translate(player.x * s, player.y * s + bob); // Position relative to world, camera translates context
-          ctx.rotate(shake);
-          const size = 54;
+        // Lock Icon
+        ctx.font = '30px serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#0cf';
+        ctx.fillText('🔒', 0, 0);
 
-          let sprite = playerImgRef.current;
-          if (player.actionState === 'ATTACK_KNIFE' && playerKnifeImgRef.current) sprite = playerKnifeImgRef.current;
-          if (player.actionState === 'ATTACK_GUN' && playerShootImgRef.current) sprite = playerShootImgRef.current;
+        // Rotating Seals
+        ctx.rotate(time);
+        ctx.strokeStyle = 'rgba(0, 200, 255, 0.4)';
+        ctx.setLineDash([5, 10]);
+        ctx.beginPath(); ctx.arc(0, 0, 30, 0, Math.PI * 2); ctx.stroke();
 
-          ctx.drawImage(sprite, -size / 2, -size / 2 - 12, size, size);
-          ctx.restore();
-        } else {
-          ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(player.x * s, player.y * s, 12, 0, Math.PI * 2); ctx.fill();
-        }
+        ctx.restore();
       }
-    });
-
-    // Add Particles
-    particlesRef.current.forEach(p => {
-      renderList.push({
-        type: 'PARTICLE',
-        y: p.y * s,
-        draw: () => {
-          const opacity = p.life / p.maxLife;
-          ctx.fillStyle = `rgba(150, 140, 130, ${opacity * 0.4})`;
-          ctx.beginPath();
-          ctx.arc(p.x * s, p.y * s, p.size, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      });
-    });
-
-    // SORT AND DRAW
-    renderList.sort((a, b) => a.y - b.y);
-    renderList.forEach(item => item.draw());
-
-    ctx.restore();
-
-    // DYNAMIC VISION MASK
-    const visionCanvas = document.createElement('canvas');
-    visionCanvas.width = ww; visionCanvas.height = wh;
-    const vctx = visionCanvas.getContext('2d')!;
-
-    vctx.fillStyle = '#000'; vctx.fillRect(0, 0, ww, wh);
-    vctx.globalCompositeOperation = 'destination-out';
-
-    // Vision radius restored to 120 pixels (base) or 450 (flashlight)
-    const visionRadius = player.isFlashlightOn ? 450 : 120;
-    const grad = vctx.createRadialGradient(ww / 2, wh / 2, 0, ww / 2, wh / 2, visionRadius);
-    grad.addColorStop(0, 'rgba(255,255,255,1)');
-    grad.addColorStop(0.6, 'rgba(255,255,255,0.4)');
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
-    vctx.fillStyle = grad;
-    vctx.fillRect(ww / 2 - visionRadius, wh / 2 - visionRadius, visionRadius * 2, visionRadius * 2);
-
-    ctx.drawImage(visionCanvas, 0, 0);
-
-    if (player.isFlashlightOn) {
-      ctx.globalAlpha = 0.04; ctx.fillStyle = '#fff9c4'; ctx.fillRect(0, 0, ww, wh); ctx.globalAlpha = 1.0;
     }
+      });
+});
+
+// Add Player
+renderList.push({
+  type: 'PLAYER',
+  y: player.y * s,
+  draw: () => {
+    const isMoving = !!(keysRef.current['KeyW'] || keysRef.current['KeyS'] || keysRef.current['KeyA'] || keysRef.current['KeyD'] || keysRef.current['ArrowUp'] || keysRef.current['ArrowDown'] || keysRef.current['ArrowLeft'] || keysRef.current['ArrowRight']);
+    const bob = isMoving ? Math.sin(performance.now() * 0.015) * 4 : Math.sin(performance.now() * 0.003) * 2;
+    const shake = isMoving ? Math.cos(performance.now() * 0.015) * 0.05 : 0;
+
+    if (playerImgRef.current) {
+      ctx.save();
+      ctx.translate(player.x * s, player.y * s + bob); // Position relative to world, camera translates context
+      ctx.rotate(shake);
+      const size = 54;
+
+      let sprite = playerImgRef.current;
+      if (player.actionState === 'ATTACK_KNIFE' && playerKnifeImgRef.current) sprite = playerKnifeImgRef.current;
+      if (player.actionState === 'ATTACK_GUN' && playerShootImgRef.current) sprite = playerShootImgRef.current;
+
+      ctx.drawImage(sprite, -size / 2, -size / 2 - 12, size, size);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(player.x * s, player.y * s, 12, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+});
+
+// Add Particles
+particlesRef.current.forEach(p => {
+  renderList.push({
+    type: 'PARTICLE',
+    y: p.y * s,
+    draw: () => {
+      const opacity = p.life / p.maxLife;
+      ctx.fillStyle = `rgba(150, 140, 130, ${opacity * 0.4})`;
+      ctx.beginPath();
+      ctx.arc(p.x * s, p.y * s, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+});
+
+// SORT AND DRAW
+renderList.sort((a, b) => a.y - b.y);
+renderList.forEach(item => item.draw());
+
+ctx.restore();
+
+// DYNAMIC VISION MASK
+const visionCanvas = document.createElement('canvas');
+visionCanvas.width = ww; visionCanvas.height = wh;
+const vctx = visionCanvas.getContext('2d')!;
+
+vctx.fillStyle = '#000'; vctx.fillRect(0, 0, ww, wh);
+vctx.globalCompositeOperation = 'destination-out';
+
+// Vision radius restored to 120 pixels (base) or 450 (flashlight)
+const visionRadius = player.isFlashlightOn ? 450 : 120;
+const grad = vctx.createRadialGradient(ww / 2, wh / 2, 0, ww / 2, wh / 2, visionRadius);
+grad.addColorStop(0, 'rgba(255,255,255,1)');
+grad.addColorStop(0.6, 'rgba(255,255,255,0.4)');
+grad.addColorStop(1, 'rgba(255,255,255,0)');
+vctx.fillStyle = grad;
+vctx.fillRect(ww / 2 - visionRadius, wh / 2 - visionRadius, visionRadius * 2, visionRadius * 2);
+
+ctx.drawImage(visionCanvas, 0, 0);
+
+if (player.isFlashlightOn) {
+  ctx.globalAlpha = 0.04; ctx.fillStyle = '#fff9c4'; ctx.fillRect(0, 0, ww, wh); ctx.globalAlpha = 1.0;
+}
   }, [gameState, screen]);
 
-  useEffect(() => { draw(); }, [draw]);
+useEffect(() => { draw(); }, [draw]);
 
-  const onDragStart = (id: string) => setGameState(s => s ? { ...s, draggingItemId: id } : null);
-  const onDrop = (target: 'inv' | 'left' | 'right' | 'consume' | 'chest') => {
-    setGameState(s => {
-      if (!s || !s.draggingItemId) return s;
-      const id = s.draggingItemId, player = { ...s.player };
-      const chest = s.entities.find(e => e.id === s.activeChestId);
-      const item = player.inventory.find(i => i.id === id) || chest?.data.items.find((i: any) => i.id === id);
-      if (!item) return { ...s, draggingItemId: null };
+const onDragStart = (id: string) => setGameState(s => s ? { ...s, draggingItemId: id } : null);
+const onDrop = (target: 'inv' | 'left' | 'right' | 'consume' | 'chest') => {
+  setGameState(s => {
+    if (!s || !s.draggingItemId) return s;
+    const id = s.draggingItemId, player = { ...s.player };
+    const chest = s.entities.find(e => e.id === s.activeChestId);
+    const item = player.inventory.find(i => i.id === id) || chest?.data.items.find((i: any) => i.id === id);
+    if (!item) return { ...s, draggingItemId: null };
 
-      if (player.inventory.some(i => i.id === id)) {
-        if (target === 'chest' && chest) {
-          player.inventory = player.inventory.filter(i => i.id !== id);
-          if (player.equippedLeftId === id) player.equippedLeftId = null;
-          if (player.equippedRightId === id) player.equippedRightId = null;
-          chest.data.items.push(item);
-        } else if (target === 'left') { player.equippedLeftId = id; if (player.equippedRightId === id) player.equippedRightId = null; }
-        else if (target === 'right') { player.equippedRightId = id; if (player.equippedLeftId === id) player.equippedLeftId = null; }
-        else if (target === 'inv') { player.equippedLeftId = (player.equippedLeftId === id ? null : player.equippedLeftId); player.equippedRightId = (player.equippedRightId === id ? null : player.equippedRightId); }
-        else if (target === 'consume') {
-          if (item.type === Types.ItemType.FOOD) player.hunger = Math.min(100, player.hunger + 35);
-          if (item.type === Types.ItemType.WATER) player.hydration = Math.min(100, player.hydration + 35);
-          player.inventory = player.inventory.filter(i => i.id !== id);
-          if (player.equippedLeftId === id) player.equippedLeftId = null;
-          if (player.equippedRightId === id) player.equippedRightId = null;
-        }
-      } else if (chest?.data.items.some((i: any) => i.id === id) && target !== 'chest') {
-        chest.data.items = chest.data.items.filter((i: any) => i.id !== id);
-        player.inventory.push(item);
-        if (target === 'left') player.equippedLeftId = id;
-        if (target === 'right') player.equippedRightId = id;
+    if (player.inventory.some(i => i.id === id)) {
+      if (target === 'chest' && chest) {
+        player.inventory = player.inventory.filter(i => i.id !== id);
+        if (player.equippedLeftId === id) player.equippedLeftId = null;
+        if (player.equippedRightId === id) player.equippedRightId = null;
+        chest.data.items.push(item);
+      } else if (target === 'left') { player.equippedLeftId = id; if (player.equippedRightId === id) player.equippedRightId = null; }
+      else if (target === 'right') { player.equippedRightId = id; if (player.equippedLeftId === id) player.equippedLeftId = null; }
+      else if (target === 'inv') { player.equippedLeftId = (player.equippedLeftId === id ? null : player.equippedLeftId); player.equippedRightId = (player.equippedRightId === id ? null : player.equippedRightId); }
+      else if (target === 'consume') {
+        if (item.type === Types.ItemType.FOOD) player.hunger = Math.min(100, player.hunger + 35);
+        if (item.type === Types.ItemType.WATER) player.hydration = Math.min(100, player.hydration + 35);
+        player.inventory = player.inventory.filter(i => i.id !== id);
+        if (player.equippedLeftId === id) player.equippedLeftId = null;
+        if (player.equippedRightId === id) player.equippedRightId = null;
       }
-      return { ...s, player, draggingItemId: null };
-    });
-  };
+    } else if (chest?.data.items.some((i: any) => i.id === id) && target !== 'chest') {
+      chest.data.items = chest.data.items.filter((i: any) => i.id !== id);
+      player.inventory.push(item);
+      if (target === 'left') player.equippedLeftId = id;
+      if (target === 'right') player.equippedRightId = id;
+    }
+    return { ...s, player, draggingItemId: null };
+  });
+};
 
-  const returnToMenu = () => {
-    setGameState(null);
-    setScreen('MENU');
-  };
+const returnToMenu = () => {
+  setGameState(null);
+  setScreen('MENU');
+};
 
-  if (screen === 'MENU') {
-    return (
-      <div className="w-screen h-screen bg-black flex flex-col items-center justify-center p-10 font-mono text-zinc-100">
-        <div className="absolute inset-0 bg-blue-900/5 pointer-events-none" />
-        <h1 className="text-5xl md:text-7xl font-black tracking-widest mb-4 animate-pulse text-zinc-50 text-center leading-tight">
-          无尽虚空：迷宫
-        </h1>
-        <p
-          className="text-zinc-500 mb-12 md:mb-16 tracking-[0.4em] md:tracking-[0.5em] text-[10px] uppercase cursor-pointer select-none"
-          onClick={() => {
-            setVersionClickCount(prev => {
-              if (prev + 1 >= 5) {
-                setShowAdmin(true);
-                return 0;
-              }
-              return prev + 1;
-            });
-          }}
-        >
-          迷宫生存模拟器 v3.2
-        </p>
-
-        <div className="flex flex-col gap-6 w-96 relative z-10">
-          <button onClick={() => initGame(false)} className="group relative overflow-hidden px-8 py-5 border border-zinc-700 bg-zinc-900/50 hover:bg-zinc-50 hover:text-black transition-all">
-            <div className="flex justify-between items-center font-black uppercase tracking-widest text-sm">
-              <span>开始新探险</span>
-              <span className="opacity-0 group-hover:opacity-100">{'>>'}</span>
-            </div>
-          </button>
-
-          {currentUser && (
-            <button onClick={() => initGame(true)} className="group relative overflow-hidden px-8 py-5 border-2 border-blue-900 bg-blue-950/20 hover:bg-blue-600 hover:text-white transition-all">
-              <div className="flex justify-between items-center font-black uppercase tracking-widest text-sm text-blue-300 group-hover:text-white">
-                <span>继续此前任务</span>
-                <span>(加载云存档)</span>
-              </div>
-            </button>
-          )}
-
-          <button onClick={() => setShowManual(true)} className="group relative overflow-hidden px-8 py-4 border border-zinc-800 hover:border-cyan-600 transition-all">
-            <div className="flex justify-between items-center font-bold uppercase tracking-widest text-[10px] text-zinc-600 group-hover:text-cyan-400">
-              <span>资料档案 // DATA_MANUAL</span>
-              <span>READ_ME</span>
-            </div>
-          </button>
-
-          <button onClick={async () => {
-            try {
-              const data = await cloudflare.getLeaderboard();
-              setLeaderboardData(data);
-              setShowLeaderboard(true);
-            } catch (e) {
-              alert("获取英雄榜失败");
+if (screen === 'MENU') {
+  return (
+    <div className="w-screen h-screen bg-black flex flex-col items-center justify-center p-10 font-mono text-zinc-100">
+      <div className="absolute inset-0 bg-blue-900/5 pointer-events-none" />
+      <h1 className="text-5xl md:text-7xl font-black tracking-widest mb-4 animate-pulse text-zinc-50 text-center leading-tight">
+        无尽虚空：迷宫
+      </h1>
+      <p
+        className="text-zinc-500 mb-12 md:mb-16 tracking-[0.4em] md:tracking-[0.5em] text-[10px] uppercase cursor-pointer select-none"
+        onClick={() => {
+          setVersionClickCount(prev => {
+            if (prev + 1 >= 5) {
+              setShowAdmin(true);
+              return 0;
             }
-          }} className="group relative overflow-hidden px-8 py-4 border border-zinc-800 hover:border-yellow-600 transition-all">
-            <div className="flex justify-between items-center font-bold uppercase tracking-widest text-[10px] text-zinc-600 group-hover:text-yellow-400">
-              <span>迷宫英雄榜 // LEADERBOARD</span>
-              <span>TOP_20</span>
+            return prev + 1;
+          });
+        }}
+      >
+        迷宫生存模拟器 v3.2
+      </p>
+
+      <div className="flex flex-col gap-6 w-96 relative z-10">
+        <button onClick={() => initGame(false)} className="group relative overflow-hidden px-8 py-5 border border-zinc-700 bg-zinc-900/50 hover:bg-zinc-50 hover:text-black transition-all">
+          <div className="flex justify-between items-center font-black uppercase tracking-widest text-sm">
+            <span>开始新探险</span>
+            <span className="opacity-0 group-hover:opacity-100">{'>>'}</span>
+          </div>
+        </button>
+
+        {currentUser && (
+          <button onClick={() => initGame(true)} className="group relative overflow-hidden px-8 py-5 border-2 border-blue-900 bg-blue-950/20 hover:bg-blue-600 hover:text-white transition-all">
+            <div className="flex justify-between items-center font-black uppercase tracking-widest text-sm text-blue-300 group-hover:text-white">
+              <span>继续此前任务</span>
+              <span>(加载云存档)</span>
             </div>
           </button>
-
-          {/* AUTH BUTTON */}
-          {!currentUser ? (
-            <button onClick={() => setShowAuth(true)} className="group relative overflow-hidden px-8 py-5 border border-zinc-800 bg-black hover:border-yellow-600 transition-all">
-              <div className="flex justify-between items-center font-black uppercase tracking-widest text-xs text-zinc-500 group-hover:text-yellow-500">
-                <span>⚡ 虚空终端连接 (登录)</span>
-                <span>OFFLINE</span>
-              </div>
-            </button>
-          ) : (
-            <div className="relative px-8 py-5 border border-green-900 bg-green-950/10">
-              <div className="flex justify-between items-center font-bold uppercase tracking-widest text-xs text-green-500">
-                <span className="truncate max-w-[200px]">{currentUser.username}</span>
-                <button onClick={() => {
-                  setCurrentUser(null);
-                  localStorage.removeItem('void_user');
-                }} className="hover:text-white underline">注销</button>
-              </div>
-              <div className="text-[9px] text-green-700 mt-1">云端神经元已连接 (D1)</div>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-16 md:mt-24 flex flex-wrap justify-center gap-6 md:gap-12 opacity-20 text-[9px] font-bold uppercase tracking-widest text-center px-4">
-          <div>区域大小: {Constants.MAP_SIZE}^2</div>
-          <div>认证: 已安全</div>
-          <div>核心: 稳定</div>
-        </div>
-
-        {showManual && <GameManual onClose={() => setShowManual(false)} />}
-
-        {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
-
-        {showAuth && (
-          <AuthForm
-            onLoginSuccess={(user) => {
-              setCurrentUser(user);
-              setShowAuth(false);
-            }}
-            onCancel={() => setShowAuth(false)}
-          />
         )}
 
-        {showLeaderboard && (
-          <div className="fixed inset-0 bg-black/95 z-[1000] flex flex-col p-8 overflow-y-auto font-mono">
-            <div className="max-w-xl mx-auto w-full py-10">
-              <h2 className="text-3xl font-black text-white mb-8 border-b border-zinc-800 pb-4 uppercase italic">迷宫英雄榜 // TOP_20</h2>
-              <div className="space-y-2">
-                {leaderboardData.map((record, i) => (
-                  <div key={i} className="flex justify-between items-center p-4 bg-zinc-900/60 border border-zinc-800/50 rounded-xl hover:border-zinc-700 transition-colors">
-                    <div className="flex gap-4 items-center min-w-0">
-                      <span className="text-zinc-600 font-mono text-sm w-6">#{(i + 1).toString().padStart(2, '0')}</span>
-                      <span className="text-white font-bold truncate">{record.username}</span>
-                    </div>
-                    <div className="flex gap-4 md:gap-6 text-[11px] items-center font-mono">
-                      <div className="text-cyan-400 flex items-center gap-1">
-                        <span className="opacity-50">⏱</span>{record.clear_time_seconds.toFixed(1)}s
-                      </div>
-                      <div className="text-red-500 flex items-center gap-1">
-                        <span className="opacity-50">💀</span>{record.monster_kills}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button onClick={() => setShowLeaderboard(false)} className="mt-12 w-full py-4 bg-white text-black font-black uppercase tracking-widest rounded-xl">关闭档案</button>
+        <button onClick={() => setShowManual(true)} className="group relative overflow-hidden px-8 py-4 border border-zinc-800 hover:border-cyan-600 transition-all">
+          <div className="flex justify-between items-center font-bold uppercase tracking-widest text-[10px] text-zinc-600 group-hover:text-cyan-400">
+            <span>资料档案 // DATA_MANUAL</span>
+            <span>READ_ME</span>
+          </div>
+        </button>
+
+        <button onClick={async () => {
+          try {
+            const data = await cloudflare.getLeaderboard();
+            setLeaderboardData(data);
+            setShowLeaderboard(true);
+          } catch (e) {
+            alert("获取英雄榜失败");
+          }
+        }} className="group relative overflow-hidden px-8 py-4 border border-zinc-800 hover:border-yellow-600 transition-all">
+          <div className="flex justify-between items-center font-bold uppercase tracking-widest text-[10px] text-zinc-600 group-hover:text-yellow-400">
+            <span>迷宫英雄榜 // LEADERBOARD</span>
+            <span>TOP_20</span>
+          </div>
+        </button>
+
+        {/* AUTH BUTTON */}
+        {!currentUser ? (
+          <button onClick={() => setShowAuth(true)} className="group relative overflow-hidden px-8 py-5 border border-zinc-800 bg-black hover:border-yellow-600 transition-all">
+            <div className="flex justify-between items-center font-black uppercase tracking-widest text-xs text-zinc-500 group-hover:text-yellow-500">
+              <span>⚡ 虚空终端连接 (登录)</span>
+              <span>OFFLINE</span>
             </div>
+          </button>
+        ) : (
+          <div className="relative px-8 py-5 border border-green-900 bg-green-950/10">
+            <div className="flex justify-between items-center font-bold uppercase tracking-widest text-xs text-green-500">
+              <span className="truncate max-w-[200px]">{currentUser.username}</span>
+              <button onClick={() => {
+                setCurrentUser(null);
+                localStorage.removeItem('void_user');
+              }} className="hover:text-white underline">注销</button>
+            </div>
+            <div className="text-[9px] text-green-700 mt-1">云端神经元已连接 (D1)</div>
           </div>
         )}
       </div>
-    );
-  }
 
-  if (screen === 'LOADING_AI') {
-    return <FallingVoid onComplete={() => {
-      if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
-      setScreen('PLAYING');
-      damageNumbersRef.current = [];
-    }} />;
-  }
+      <div className="mt-16 md:mt-24 flex flex-wrap justify-center gap-6 md:gap-12 opacity-20 text-[9px] font-bold uppercase tracking-widest text-center px-4">
+        <div>区域大小: {Constants.MAP_SIZE}^2</div>
+        <div>认证: 已安全</div>
+        <div>核心: 稳定</div>
+      </div>
 
-  if (!gameState) return null;
-  const { player } = gameState;
-  const eL = player.inventory.find(i => i.id === player.equippedLeftId);
-  const eR = player.inventory.find(i => i.id === player.equippedRightId);
-  const eP = player.inventory.find(i => i.id === player.equippedPocketId);
+      {showManual && <GameManual onClose={() => setShowManual(false)} />}
 
-  // Helper to handle item actions from the bar
-  const handleSlotAction = (item: Types.InventoryItem | undefined, slot: 'left' | 'right' | 'pocket') => {
-    if (!item) return;
-    if (item.type === Types.ItemType.FLASHLIGHT) {
-      setGameState(prev => {
-        if (!prev) return null;
-        return { ...prev, player: { ...prev.player, isFlashlightOn: !prev.player.isFlashlightOn } };
-      });
-    } else if (item.type === Types.ItemType.FOOD || item.type === Types.ItemType.WATER) {
-      setGameState(prev => {
-        if (!prev) return null;
-        const p = { ...prev.player };
-        if (item.type === Types.ItemType.FOOD) p.hunger = Math.min(100, p.hunger + 35);
-        if (item.type === Types.ItemType.WATER) p.hydration = Math.min(100, p.hydration + 35);
+      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
 
-        let nextInv = p.inventory.map(i => i.id === item.id ? { ...i, count: (i.count || 1) - 1 } : i);
-        const updated = nextInv.find(i => i.id === item.id);
-        if (updated && updated.count! <= 0) {
-          nextInv = nextInv.filter(i => i.id !== item.id);
-          if (p.equippedLeftId === item.id) p.equippedLeftId = null;
-          if (p.equippedRightId === item.id) p.equippedRightId = null;
-          if (p.equippedPocketId === item.id) p.equippedPocketId = null;
-        }
-        return { ...prev, player: { ...p, inventory: nextInv } };
-      });
-    } else if (item.type === Types.ItemType.GUN) {
-      setGameState(prev => prev ? { ...prev, message: '武器已就绪', messageTimeout: 0.5 } : null);
-    }
-  };
+      {showAuth && (
+        <AuthForm
+          onLoginSuccess={(user) => {
+            setCurrentUser(user);
+            setShowAuth(false);
+          }}
+          onCancel={() => setShowAuth(false)}
+        />
+      )}
 
-  const handleEquip = (itemId: string, slot: 'left' | 'right' | 'pocket') => {
+      {showLeaderboard && (
+        <div className="fixed inset-0 bg-black/95 z-[1000] flex flex-col p-8 overflow-y-auto font-mono">
+          <div className="max-w-xl mx-auto w-full py-10">
+            <h2 className="text-3xl font-black text-white mb-8 border-b border-zinc-800 pb-4 uppercase italic">迷宫英雄榜 // TOP_20</h2>
+            <div className="space-y-2">
+              {leaderboardData.map((record, i) => (
+                <div key={i} className="flex justify-between items-center p-4 bg-zinc-900/60 border border-zinc-800/50 rounded-xl hover:border-zinc-700 transition-colors">
+                  <div className="flex gap-4 items-center min-w-0">
+                    <span className="text-zinc-600 font-mono text-sm w-6">#{(i + 1).toString().padStart(2, '0')}</span>
+                    <span className="text-white font-bold truncate">{record.username}</span>
+                  </div>
+                  <div className="flex gap-4 md:gap-6 text-[11px] items-center font-mono">
+                    <div className="text-cyan-400 flex items-center gap-1">
+                      <span className="opacity-50">⏱</span>{record.clear_time_seconds.toFixed(1)}s
+                    </div>
+                    <div className="text-red-500 flex items-center gap-1">
+                      <span className="opacity-50">💀</span>{record.monster_kills}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button onClick={() => setShowLeaderboard(false)} className="mt-12 w-full py-4 bg-white text-black font-black uppercase tracking-widest rounded-xl">关闭档案</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+if (screen === 'LOADING_AI') {
+  return <FallingVoid onComplete={() => {
+    if (loadingTimeoutRef.current) clearTimeout(loadingTimeoutRef.current);
+    setScreen('PLAYING');
+    damageNumbersRef.current = [];
+  }} />;
+}
+
+if (!gameState) return null;
+const { player } = gameState;
+const eL = player.inventory.find(i => i.id === player.equippedLeftId);
+const eR = player.inventory.find(i => i.id === player.equippedRightId);
+const eP = player.inventory.find(i => i.id === player.equippedPocketId);
+
+// Helper to handle item actions from the bar
+const handleSlotAction = (item: Types.InventoryItem | undefined, slot: 'left' | 'right' | 'pocket') => {
+  if (!item) return;
+  if (item.type === Types.ItemType.FLASHLIGHT) {
+    setGameState(prev => {
+      if (!prev) return null;
+      return { ...prev, player: { ...prev.player, isFlashlightOn: !prev.player.isFlashlightOn } };
+    });
+  } else if (item.type === Types.ItemType.FOOD || item.type === Types.ItemType.WATER) {
     setGameState(prev => {
       if (!prev) return null;
       const p = { ...prev.player };
-      if (p.equippedLeftId === itemId && slot !== 'left') p.equippedLeftId = null;
-      if (p.equippedRightId === itemId && slot !== 'right') p.equippedRightId = null;
-      if (p.equippedPocketId === itemId && slot !== 'pocket') p.equippedPocketId = null;
+      if (item.type === Types.ItemType.FOOD) p.hunger = Math.min(100, p.hunger + 35);
+      if (item.type === Types.ItemType.WATER) p.hydration = Math.min(100, p.hydration + 35);
 
-      if (slot === 'left') p.equippedLeftId = itemId;
-      if (slot === 'right') p.equippedRightId = itemId;
-      if (slot === 'pocket') p.equippedPocketId = itemId;
-
-      return { ...prev, player: p };
+      let nextInv = p.inventory.map(i => i.id === item.id ? { ...i, count: (i.count || 1) - 1 } : i);
+      const updated = nextInv.find(i => i.id === item.id);
+      if (updated && updated.count! <= 0) {
+        nextInv = nextInv.filter(i => i.id !== item.id);
+        if (p.equippedLeftId === item.id) p.equippedLeftId = null;
+        if (p.equippedRightId === item.id) p.equippedRightId = null;
+        if (p.equippedPocketId === item.id) p.equippedPocketId = null;
+      }
+      return { ...prev, player: { ...p, inventory: nextInv } };
     });
-  };
+  } else if (item.type === Types.ItemType.GUN) {
+    setGameState(prev => prev ? { ...prev, message: '武器已就绪', messageTimeout: 0.5 } : null);
+  }
+};
 
-  return (
-    <div className="relative w-screen h-screen bg-black text-zinc-200 font-mono overflow-hidden select-none">
-      <canvas
-        ref={canvasRef}
-        onClick={handleCanvasClick}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        className="absolute inset-0 block w-full h-full cursor-crosshair touch-none"
-      />
+const handleEquip = (itemId: string, slot: 'left' | 'right' | 'pocket') => {
+  setGameState(prev => {
+    if (!prev) return null;
+    const p = { ...prev.player };
+    if (p.equippedLeftId === itemId && slot !== 'left') p.equippedLeftId = null;
+    if (p.equippedRightId === itemId && slot !== 'right') p.equippedRightId = null;
+    if (p.equippedPocketId === itemId && slot !== 'pocket') p.equippedPocketId = null;
 
-      {/* HIT FLASH OVERLAY */}
-      <div
-        className="absolute inset-0 bg-red-600 pointer-events-none transition-opacity duration-75 z-20"
-        style={{ opacity: (gameState?.player.hitFlash || 0) }}
-      />
+    if (slot === 'left') p.equippedLeftId = itemId;
+    if (slot === 'right') p.equippedRightId = itemId;
+    if (slot === 'pocket') p.equippedPocketId = itemId;
 
-      {/* --- TOP BAR --- */}
-      <div className="absolute top-0 left-0 w-full p-4 pt-12 flex items-center justify-between pointer-events-none z-10 bg-gradient-to-b from-black/90 to-transparent">
-        <div className="flex gap-3 flex-1 items-center px-2">
+    return { ...prev, player: p };
+  });
+};
 
-          {/* HP */}
-          <div className="text-red-600 text-[12px] w-4 text-center">♥</div>
-          <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
-            <div className="absolute top-0 left-0 h-full bg-red-600" style={{ width: `${Math.max(0, player.health).toFixed(1)}%` }}></div>
-            <div className="absolute inset-0 flex items-center justify-center text-[8px] font-mono text-white/50">{Math.floor(player.health)}%</div>
-          </div>
+return (
+  <div className="relative w-screen h-screen bg-black text-zinc-200 font-mono overflow-hidden select-none">
+    <canvas
+      ref={canvasRef}
+      onClick={handleCanvasClick}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      className="absolute inset-0 block w-full h-full cursor-crosshair touch-none"
+    />
 
-          {/* ENERGY (Hunger) */}
-          <div className="text-yellow-500 text-[12px] w-4 text-center">⚡</div>
-          <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
-            <div className="absolute top-0 left-0 h-full bg-green-500" style={{ width: `${Math.max(0, player.hunger).toFixed(1)}%` }}></div>
-            <div className="absolute inset-0 flex items-center justify-center text-[8px] font-mono text-white/50">{Math.floor(player.hunger)}%</div>
-          </div>
+    {/* HIT FLASH OVERLAY */}
+    <div
+      className="absolute inset-0 bg-red-600 pointer-events-none transition-opacity duration-75 z-20"
+      style={{ opacity: (gameState?.player.hitFlash || 0) }}
+    />
 
-          {/* WATER (Hydration) */}
-          <div className="text-blue-500 text-[12px] w-4 text-center">💧</div>
-          <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
-            <div className="absolute top-0 left-0 h-full bg-blue-500" style={{ width: `${Math.max(0, player.hydration).toFixed(1)}%` }}></div>
-            <div className="absolute inset-0 flex items-center justify-center text-[8px] font-mono text-white/50">{Math.floor(player.hydration)}%</div>
-          </div>
+    {/* --- TOP BAR --- */}
+    <div className="absolute top-0 left-0 w-full p-4 pt-12 flex items-center justify-between pointer-events-none z-10 bg-gradient-to-b from-black/90 to-transparent">
+      <div className="flex gap-3 flex-1 items-center px-2">
 
+        {/* HP */}
+        <div className="text-red-600 text-[12px] w-4 text-center">♥</div>
+        <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
+          <div className="absolute top-0 left-0 h-full bg-red-600" style={{ width: `${Math.max(0, player.health).toFixed(1)}%` }}></div>
+          <div className="absolute inset-0 flex items-center justify-center text-[8px] font-mono text-white/50">{Math.floor(player.health)}%</div>
         </div>
 
-        {/* Menu Button */}
-        <button
-          onClick={() => setShowInventory(true)}
-          className="pointer-events-auto ml-3 p-3 bg-zinc-800/80 border border-zinc-600 rounded-lg text-white active:scale-95 transition-transform"
-        >
-          <div className="space-y-1">
-            <div className="w-5 h-0.5 bg-white"></div>
-            <div className="w-5 h-0.5 bg-white"></div>
-            <div className="w-5 h-0.5 bg-white"></div>
-          </div>
-        </button>
-      </div>
-
-      {/* --- INVENTORY OVERLAY --- */}
-      {showInventory && (
-        <div className="absolute top-0 left-0 right-0 bottom-[200px] z-50 bg-zinc-900/95 backdrop-blur-md flex flex-col p-6 pt-16 animate-fade-in pointer-events-auto shadow-2xl border-b border-zinc-700 rounded-b-[2rem]">
-          <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
-            <h2 className="text-xl font-bold tracking-widest text-zinc-400">物资背包</h2>
-            <button onClick={() => setShowInventory(false)} className="px-4 py-2 border border-zinc-600 rounded text-zinc-400">关闭</button>
-          </div>
-
-          <div className="grid grid-cols-4 gap-4 overflow-y-auto content-start pb-20">
-            {player.inventory.map(item => (
-              <div key={item.id} className="aspect-square bg-zinc-800/50 border border-zinc-700 rounded-xl p-1 flex flex-col items-center justify-center relative group">
-                <div className="flex-1 flex items-center justify-center w-full min-h-0">
-                  {item.type === Types.ItemType.AMMO && ammoImgRef.current ? (
-                    <img src="/assets/ammo.png" alt="ammo" className="max-w-[80%] max-h-[80%] object-contain" />
-                  ) : (
-                    <div className="text-2xl">{ITEM_ICONS[item.type]}</div>
-                  )}
-                </div>
-                <div className="text-[9px] text-zinc-500 truncate w-full text-center pb-1">{item.name}</div>
-                {item.count !== undefined && <div className="absolute top-1 right-1 text-[8px] bg-zinc-700 px-1 rounded text-white">{item.count}</div>}
-
-                {/* Equip Overlay */}
-                <div onClick={() => {
-                  setGameState(prev => {
-                    if (!prev) return null;
-                    const p = { ...prev.player };
-
-                    // RELOAD/RECHARGE LOGIC
-                    if (item.type === Types.ItemType.BATTERY) {
-                      const fl = p.inventory.find(i => i.type === Types.ItemType.FLASHLIGHT);
-                      if (fl) {
-                        fl.durability = 100;
-                        p.inventory = p.inventory.filter(i => i.id !== item.id);
-                        return { ...prev, player: p, message: '电筒已充电', messageTimeout: 2 };
-                      }
-                    } else if (item.type === Types.ItemType.AMMO) {
-                      const gun = p.inventory.find(i => i.type === Types.ItemType.GUN);
-                      if (gun) {
-                        gun.count = 12;
-                        p.inventory = p.inventory.filter(i => i.id !== item.id);
-                        return { ...prev, player: p, message: '已更换弹夹', messageTimeout: 2 };
-                      }
-                    }
-
-                    // NORMAL EQUIP LOGIC
-                    const nextP = autoEquip(p, item);
-                    if (item.type === Types.ItemType.FLASHLIGHT) {
-                      nextP.equippedLeftId = item.id;
-                      if (nextP.equippedPocketId === item.id) nextP.equippedPocketId = null;
-                      if (nextP.equippedRightId === item.id) nextP.equippedRightId = null;
-                    }
-                    else if (item.type === Types.ItemType.GUN || item.type === Types.ItemType.KNIFE) {
-                      nextP.equippedRightId = item.id;
-                      if (nextP.equippedPocketId === item.id) nextP.equippedPocketId = null;
-                      if (nextP.equippedLeftId === item.id) nextP.equippedLeftId = null;
-                    }
-                    else if (item.type === Types.ItemType.FOOD || item.type === Types.ItemType.WATER) {
-                      nextP.equippedPocketId = item.id;
-                      if (nextP.equippedLeftId === item.id) nextP.equippedLeftId = null;
-                      if (nextP.equippedRightId === item.id) nextP.equippedRightId = null;
-                    }
-
-                    return { ...prev, player: nextP };
-                  });
-                }} className="absolute inset-0 bg-transparent z-10 cursor-pointer active:bg-white/10" />
-
-                {/* REMOVED OLD EQUIP BUTTONS */}
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-auto border-t border-zinc-800 pt-4 flex flex-col gap-3">
-            <button onClick={() => setGameState(s => s ? { ...s, isPaused: !s.isPaused } : null)} className="w-full py-4 bg-zinc-800 text-zinc-300 font-bold rounded-xl uppercase tracking-widest">
-              {gameState.isPaused ? '继续游戏' : '暂停游戏'}
-            </button>
-            <button onClick={saveAndExit} className="w-full py-4 bg-red-900/20 border border-red-900/50 text-red-500 font-bold rounded-xl uppercase tracking-widest">保存并退出</button>
-          </div>
+        {/* ENERGY (Hunger) */}
+        <div className="text-yellow-500 text-[12px] w-4 text-center">⚡</div>
+        <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
+          <div className="absolute top-0 left-0 h-full bg-green-500" style={{ width: `${Math.max(0, player.hunger).toFixed(1)}%` }}></div>
+          <div className="absolute inset-0 flex items-center justify-center text-[8px] font-mono text-white/50">{Math.floor(player.hunger)}%</div>
         </div>
-      )}
 
-      {/* --- NOTIFICATIONS --- */}
-      {gameState.message && (
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 bg-black/80 px-4 py-3 border border-zinc-700 rounded-2xl text-white font-bold text-sm tracking-widest pointer-events-none animate-pulse z-20 w-max max-w-[85vw] text-center whitespace-pre-wrap leading-relaxed shadow-lg">
-          {gameState.message}
+        {/* WATER (Hydration) */}
+        <div className="text-blue-500 text-[12px] w-4 text-center">💧</div>
+        <div className="flex-1 h-3 bg-zinc-900/80 border border-zinc-700 rounded-full overflow-hidden relative">
+          <div className="absolute top-0 left-0 h-full bg-blue-500" style={{ width: `${Math.max(0, player.hydration).toFixed(1)}%` }}></div>
+          <div className="absolute inset-0 flex items-center justify-center text-[8px] font-mono text-white/50">{Math.floor(player.hydration)}%</div>
         </div>
-      )}
-
-      {/* --- BOTTOM ACTION BAR --- */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-lg flex gap-4 pointer-events-auto z-10 px-6 items-end">
-
-        {/* LEFT HAND */}
-        <button onClick={() => handleSlotAction(eL, 'left')} className={`flex-1 aspect-square bg-zinc-900/90 backdrop-blur-md border-2 ${eL ? 'border-zinc-500' : 'border-zinc-800'} rounded-[1.5rem] flex flex-col items-center justify-center relative active:scale-95 transition-all shadow-lg`}>
-          <div className="text-[9px] absolute top-2 text-zinc-500 font-bold tracking-widest uppercase">左手</div>
-          {eL ? (
-            <>
-              <div className="flex-1 flex items-center justify-center w-full min-h-0">
-                {eL.type === Types.ItemType.AMMO && ammoImgRef.current ? (
-                  <img src="/assets/ammo.png" alt="ammo" className="max-w-[70%] max-h-[70%] object-contain mb-4" />
-                ) : (
-                  <div className="text-4xl pb-2">{ITEM_ICONS[eL.type]}</div>
-                )}
-              </div>
-              <div className="absolute bottom-2 left-0 w-full flex justify-center">
-                <div className="text-[9px] text-zinc-400 font-bold bg-zinc-950/50 px-2 rounded mb-1">{eL.name}</div>
-              </div>
-              {/* DURABILITY/AMMO DISPLAY */}
-              {eL.durability !== undefined && (
-                <div className="absolute top-2 right-2 text-[8px] font-mono text-cyan-400">{Math.ceil(eL.durability)}%</div>
-              )}
-              {eL.count !== undefined && (
-                <div className="absolute top-2 right-2 text-[8px] font-mono text-yellow-400">x{eL.count}</div>
-              )}
-            </>
-          ) : <div className="text-zinc-700 text-2xl">✋</div>}
-        </button>
-
-        {/* POCKET */}
-        <button onClick={() => handleSlotAction(eP, 'pocket')} className={`flex-1 aspect-square bg-zinc-900/90 backdrop-blur-md border-2 ${eP ? 'border-blue-500/50' : 'border-zinc-800'} rounded-[1.5rem] flex flex-col items-center justify-center relative active:scale-95 transition-all shadow-lg`}>
-          <div className="text-[9px] absolute top-2 text-zinc-500 font-bold tracking-widest uppercase">储备口袋</div>
-          {eP ? (
-            <>
-              <div className="flex-1 flex items-center justify-center w-full min-h-0">
-                {eP.type === Types.ItemType.AMMO && ammoImgRef.current ? (
-                  <img src="/assets/ammo.png" alt="ammo" className="max-w-[70%] max-h-[70%] object-contain mb-4" />
-                ) : (
-                  <div className="text-4xl pb-2">{ITEM_ICONS[eP.type]}</div>
-                )}
-              </div>
-              <div className="absolute bottom-2 left-0 w-full flex justify-center">
-                <div className="text-[9px] text-zinc-400 font-bold bg-zinc-950/50 px-2 rounded mb-1">{eP.name}</div>
-              </div>
-              {eP.type === Types.ItemType.FLASHLIGHT && player.isFlashlightOn && <div className="absolute inset-0 bg-yellow-500/10 animate-pulse pointer-events-none rounded-[1.5rem] border border-yellow-500/30" />}
-              {/* DURABILITY/AMMO DISPLAY */}
-              {eP.count !== undefined && (
-                <div className="absolute top-2 right-2 text-[8px] font-mono text-yellow-400">x{eP.count}</div>
-              )}
-            </>
-          ) : <div className="text-zinc-700 text-2xl">🎒</div>}
-        </button>
-
-        {/* RIGHT HAND */}
-        <button onClick={() => handleSlotAction(eR, 'right')} className={`flex-1 aspect-square bg-red-950/20 backdrop-blur-md border-2 ${eR ? 'border-red-600' : 'border-red-900/30'} rounded-[1.5rem] flex flex-col items-center justify-center relative active:scale-95 transition-all shadow-lg`}>
-          <div className="text-[9px] absolute top-2 text-red-500/50 font-bold tracking-widest uppercase">战备位</div>
-          {eR ? (
-            <>
-              <div className="flex-1 flex items-center justify-center w-full min-h-0">
-                {eR.type === Types.ItemType.AMMO && ammoImgRef.current ? (
-                  <img src="/assets/ammo.png" alt="ammo" className="max-w-[70%] max-h-[70%] object-contain mb-4" />
-                ) : (
-                  <div className="text-4xl pb-2">{ITEM_ICONS[eR.type]}</div>
-                )}
-              </div>
-              <div className="absolute bottom-2 left-0 w-full flex justify-center">
-                <div className="text-[9px] text-red-400 font-bold bg-black/40 px-2 rounded border border-red-900/30 mb-1">{eR.name}</div>
-              </div>
-              {/* DURABILITY/AMMO DISPLAY */}
-              {eR.durability !== undefined && (
-                <div className="absolute top-2 right-2 text-[8px] font-mono text-cyan-400">{Math.ceil(eR.durability)}%</div>
-              )}
-              {eR.count !== undefined && (
-                <div className="absolute top-2 right-2 text-[8px] font-mono text-yellow-400">x{eR.count}</div>
-              )}
-            </>
-          ) : <div className="text-zinc-700 text-2xl">⚔️</div>}
-        </button>
 
       </div>
 
-      {/* CHEST MODAL (Mobile Style) */}
-      {gameState.activeChestId && (
-        <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-center justify-center pointer-events-auto p-4">
-          <div className="bg-zinc-900 border border-yellow-700/50 p-6 rounded-3xl w-full max-w-sm shadow-2xl flex flex-col max-h-[70vh]">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-yellow-500 font-bold uppercase tracking-widest text-lg">补给箱物品</h2>
-              <button className="text-[10px] items-center justify-center bg-yellow-900/20 text-yellow-500 border border-yellow-700/50 px-3 py-1 rounded-full uppercase font-bold tracking-wider active:scale-95" onClick={() => {
-                // LOOT ALL
+      {/* Menu Button */}
+      <button
+        onClick={() => setShowInventory(true)}
+        className="pointer-events-auto ml-3 p-3 bg-zinc-800/80 border border-zinc-600 rounded-lg text-white active:scale-95 transition-transform"
+      >
+        <div className="space-y-1">
+          <div className="w-5 h-0.5 bg-white"></div>
+          <div className="w-5 h-0.5 bg-white"></div>
+          <div className="w-5 h-0.5 bg-white"></div>
+        </div>
+      </button>
+    </div>
+
+    {/* --- INVENTORY OVERLAY --- */}
+    {showInventory && (
+      <div className="absolute top-0 left-0 right-0 bottom-[200px] z-50 bg-zinc-900/95 backdrop-blur-md flex flex-col p-6 pt-16 animate-fade-in pointer-events-auto shadow-2xl border-b border-zinc-700 rounded-b-[2rem]">
+        <div className="flex justify-between items-center mb-6 border-b border-zinc-800 pb-4">
+          <h2 className="text-xl font-bold tracking-widest text-zinc-400">物资背包</h2>
+          <button onClick={() => setShowInventory(false)} className="px-4 py-2 border border-zinc-600 rounded text-zinc-400">关闭</button>
+        </div>
+
+        <div className="grid grid-cols-4 gap-4 overflow-y-auto content-start pb-20">
+          {player.inventory.map(item => (
+            <div key={item.id} className="aspect-square bg-zinc-800/50 border border-zinc-700 rounded-xl p-1 flex flex-col items-center justify-center relative group">
+              <div className="flex-1 flex items-center justify-center w-full min-h-0">
+                {item.type === Types.ItemType.AMMO && ammoImgRef.current ? (
+                  <img src="/assets/ammo.png" alt="ammo" className="max-w-[80%] max-h-[80%] object-contain" />
+                ) : (
+                  <div className="text-2xl">{ITEM_ICONS[item.type]}</div>
+                )}
+              </div>
+              <div className="text-[9px] text-zinc-500 truncate w-full text-center pb-1">{item.name}</div>
+              {item.count !== undefined && <div className="absolute top-1 right-1 text-[8px] bg-zinc-700 px-1 rounded text-white">{item.count}</div>}
+
+              {/* Equip Overlay */}
+              <div onClick={() => {
+                setGameState(prev => {
+                  if (!prev) return null;
+                  const p = { ...prev.player };
+
+                  // RELOAD/RECHARGE LOGIC
+                  if (item.type === Types.ItemType.BATTERY) {
+                    const fl = p.inventory.find(i => i.type === Types.ItemType.FLASHLIGHT);
+                    if (fl) {
+                      fl.durability = 100;
+                      p.inventory = p.inventory.filter(i => i.id !== item.id);
+                      return { ...prev, player: p, message: '电筒已充电', messageTimeout: 2 };
+                    }
+                  } else if (item.type === Types.ItemType.AMMO) {
+                    const gun = p.inventory.find(i => i.type === Types.ItemType.GUN);
+                    if (gun) {
+                      gun.count = 12;
+                      p.inventory = p.inventory.filter(i => i.id !== item.id);
+                      return { ...prev, player: p, message: '已更换弹夹', messageTimeout: 2 };
+                    }
+                  }
+
+                  // NORMAL EQUIP LOGIC
+                  const nextP = autoEquip(p, item);
+                  if (item.type === Types.ItemType.FLASHLIGHT) {
+                    nextP.equippedLeftId = item.id;
+                    if (nextP.equippedPocketId === item.id) nextP.equippedPocketId = null;
+                    if (nextP.equippedRightId === item.id) nextP.equippedRightId = null;
+                  }
+                  else if (item.type === Types.ItemType.GUN || item.type === Types.ItemType.KNIFE) {
+                    nextP.equippedRightId = item.id;
+                    if (nextP.equippedPocketId === item.id) nextP.equippedPocketId = null;
+                    if (nextP.equippedLeftId === item.id) nextP.equippedLeftId = null;
+                  }
+                  else if (item.type === Types.ItemType.FOOD || item.type === Types.ItemType.WATER) {
+                    nextP.equippedPocketId = item.id;
+                    if (nextP.equippedLeftId === item.id) nextP.equippedLeftId = null;
+                    if (nextP.equippedRightId === item.id) nextP.equippedRightId = null;
+                  }
+
+                  return { ...prev, player: nextP };
+                });
+              }} className="absolute inset-0 bg-transparent z-10 cursor-pointer active:bg-white/10" />
+
+              {/* REMOVED OLD EQUIP BUTTONS */}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-auto border-t border-zinc-800 pt-4 flex flex-col gap-3">
+          <button onClick={() => setGameState(s => s ? { ...s, isPaused: !s.isPaused } : null)} className="w-full py-4 bg-zinc-800 text-zinc-300 font-bold rounded-xl uppercase tracking-widest">
+            {gameState.isPaused ? '继续游戏' : '暂停游戏'}
+          </button>
+          <button onClick={saveAndExit} className="w-full py-4 bg-red-900/20 border border-red-900/50 text-red-500 font-bold rounded-xl uppercase tracking-widest">保存并退出</button>
+        </div>
+      </div>
+    )}
+
+    {/* --- NOTIFICATIONS --- */}
+    {gameState.message && (
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 bg-black/80 px-4 py-3 border border-zinc-700 rounded-2xl text-white font-bold text-sm tracking-widest pointer-events-none animate-pulse z-20 w-max max-w-[85vw] text-center whitespace-pre-wrap leading-relaxed shadow-lg">
+        {gameState.message}
+      </div>
+    )}
+
+    {/* --- BOTTOM ACTION BAR --- */}
+    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-lg flex gap-4 pointer-events-auto z-10 px-6 items-end">
+
+      {/* LEFT HAND */}
+      <button onClick={() => handleSlotAction(eL, 'left')} className={`flex-1 aspect-square bg-zinc-900/90 backdrop-blur-md border-2 ${eL ? 'border-zinc-500' : 'border-zinc-800'} rounded-[1.5rem] flex flex-col items-center justify-center relative active:scale-95 transition-all shadow-lg`}>
+        <div className="text-[9px] absolute top-2 text-zinc-500 font-bold tracking-widest uppercase">左手</div>
+        {eL ? (
+          <>
+            <div className="flex-1 flex items-center justify-center w-full min-h-0">
+              {eL.type === Types.ItemType.AMMO && ammoImgRef.current ? (
+                <img src="/assets/ammo.png" alt="ammo" className="max-w-[70%] max-h-[70%] object-contain mb-4" />
+              ) : (
+                <div className="text-4xl pb-2">{ITEM_ICONS[eL.type]}</div>
+              )}
+            </div>
+            <div className="absolute bottom-2 left-0 w-full flex justify-center">
+              <div className="text-[9px] text-zinc-400 font-bold bg-zinc-950/50 px-2 rounded mb-1">{eL.name}</div>
+            </div>
+            {/* DURABILITY/AMMO DISPLAY */}
+            {eL.durability !== undefined && (
+              <div className="absolute top-2 right-2 text-[8px] font-mono text-cyan-400">{Math.ceil(eL.durability)}%</div>
+            )}
+            {eL.count !== undefined && (
+              <div className="absolute top-2 right-2 text-[8px] font-mono text-yellow-400">x{eL.count}</div>
+            )}
+          </>
+        ) : <div className="text-zinc-700 text-2xl">✋</div>}
+      </button>
+
+      {/* POCKET */}
+      <button onClick={() => handleSlotAction(eP, 'pocket')} className={`flex-1 aspect-square bg-zinc-900/90 backdrop-blur-md border-2 ${eP ? 'border-blue-500/50' : 'border-zinc-800'} rounded-[1.5rem] flex flex-col items-center justify-center relative active:scale-95 transition-all shadow-lg`}>
+        <div className="text-[9px] absolute top-2 text-zinc-500 font-bold tracking-widest uppercase">储备口袋</div>
+        {eP ? (
+          <>
+            <div className="flex-1 flex items-center justify-center w-full min-h-0">
+              {eP.type === Types.ItemType.AMMO && ammoImgRef.current ? (
+                <img src="/assets/ammo.png" alt="ammo" className="max-w-[70%] max-h-[70%] object-contain mb-4" />
+              ) : (
+                <div className="text-4xl pb-2">{ITEM_ICONS[eP.type]}</div>
+              )}
+            </div>
+            <div className="absolute bottom-2 left-0 w-full flex justify-center">
+              <div className="text-[9px] text-zinc-400 font-bold bg-zinc-950/50 px-2 rounded mb-1">{eP.name}</div>
+            </div>
+            {eP.type === Types.ItemType.FLASHLIGHT && player.isFlashlightOn && <div className="absolute inset-0 bg-yellow-500/10 animate-pulse pointer-events-none rounded-[1.5rem] border border-yellow-500/30" />}
+            {/* DURABILITY/AMMO DISPLAY */}
+            {eP.count !== undefined && (
+              <div className="absolute top-2 right-2 text-[8px] font-mono text-yellow-400">x{eP.count}</div>
+            )}
+          </>
+        ) : <div className="text-zinc-700 text-2xl">🎒</div>}
+      </button>
+
+      {/* RIGHT HAND */}
+      <button onClick={() => handleSlotAction(eR, 'right')} className={`flex-1 aspect-square bg-red-950/20 backdrop-blur-md border-2 ${eR ? 'border-red-600' : 'border-red-900/30'} rounded-[1.5rem] flex flex-col items-center justify-center relative active:scale-95 transition-all shadow-lg`}>
+        <div className="text-[9px] absolute top-2 text-red-500/50 font-bold tracking-widest uppercase">战备位</div>
+        {eR ? (
+          <>
+            <div className="flex-1 flex items-center justify-center w-full min-h-0">
+              {eR.type === Types.ItemType.AMMO && ammoImgRef.current ? (
+                <img src="/assets/ammo.png" alt="ammo" className="max-w-[70%] max-h-[70%] object-contain mb-4" />
+              ) : (
+                <div className="text-4xl pb-2">{ITEM_ICONS[eR.type]}</div>
+              )}
+            </div>
+            <div className="absolute bottom-2 left-0 w-full flex justify-center">
+              <div className="text-[9px] text-red-400 font-bold bg-black/40 px-2 rounded border border-red-900/30 mb-1">{eR.name}</div>
+            </div>
+            {/* DURABILITY/AMMO DISPLAY */}
+            {eR.durability !== undefined && (
+              <div className="absolute top-2 right-2 text-[8px] font-mono text-cyan-400">{Math.ceil(eR.durability)}%</div>
+            )}
+            {eR.count !== undefined && (
+              <div className="absolute top-2 right-2 text-[8px] font-mono text-yellow-400">x{eR.count}</div>
+            )}
+          </>
+        ) : <div className="text-zinc-700 text-2xl">⚔️</div>}
+      </button>
+
+    </div>
+
+    {/* CHEST MODAL (Mobile Style) */}
+    {gameState.activeChestId && (
+      <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-center justify-center pointer-events-auto p-4">
+        <div className="bg-zinc-900 border border-yellow-700/50 p-6 rounded-3xl w-full max-w-sm shadow-2xl flex flex-col max-h-[70vh]">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-yellow-500 font-bold uppercase tracking-widest text-lg">补给箱物品</h2>
+            <button className="text-[10px] items-center justify-center bg-yellow-900/20 text-yellow-500 border border-yellow-700/50 px-3 py-1 rounded-full uppercase font-bold tracking-wider active:scale-95" onClick={() => {
+              // LOOT ALL
+              setGameState(s => {
+                if (!s) return null;
+                const chest = s.entities.find(e => e.id === s.activeChestId);
+                if (!chest) return s;
+                let p = { ...s.player };
+
+                chest.data.items.forEach((item: any) => {
+                  p.inventory.push(item);
+                  p = autoEquip(p, item);
+                });
+                chest.data.items = [];
+                return { ...s, player: p, activeChestId: null };
+              });
+            }}>全部提取</button>
+          </div>
+
+          <div className="grid grid-cols-4 gap-3 mb-4 overflow-y-auto p-2">
+            {gameState.entities.find(e => e.id === gameState.activeChestId)?.data.items.map((it: any) => (
+              <button key={it.id} onClick={() => {
+                // Loot item
                 setGameState(s => {
                   if (!s) return null;
                   const chest = s.entities.find(e => e.id === s.activeChestId);
                   if (!chest) return s;
+                  const item = chest.data.items.find((i: any) => i.id === it.id);
+                  if (!item) return s;
+
+                  // Add to player
                   let p = { ...s.player };
+                  p.inventory.push(item);
+                  p = autoEquip(p, item);
 
-                  chest.data.items.forEach((item: any) => {
-                    p.inventory.push(item);
-                    p = autoEquip(p, item);
-                  });
-                  chest.data.items = [];
-                  return { ...s, player: p, activeChestId: null };
+                  chest.data.items = chest.data.items.filter((i: any) => i.id !== it.id);
+
+                  return { ...s, player: p };
                 });
-              }}>全部提取</button>
-            </div>
+              }} className="aspect-square bg-black border border-yellow-900/30 rounded-xl flex items-center justify-center text-2xl hover:bg-yellow-900/20 active:scale-95 transition-transform">
+                {it.type === Types.ItemType.AMMO && ammoImgRef.current ? (
+                  <img src="/assets/ammo.png" alt="ammo" className="max-w-[80%] max-h-[80%] object-contain" />
+                ) : (
+                  ITEM_ICONS[it.type as Types.ItemType]
+                )}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => setGameState(s => s ? { ...s, activeChestId: null } : null)} className="mt-auto w-full py-4 bg-zinc-800 rounded-xl text-zinc-400 font-bold uppercase tracking-widest">关闭</button>
+        </div>
+      </div>
+    )}
 
-            <div className="grid grid-cols-4 gap-3 mb-4 overflow-y-auto p-2">
-              {gameState.entities.find(e => e.id === gameState.activeChestId)?.data.items.map((it: any) => (
-                <button key={it.id} onClick={() => {
-                  // Loot item
-                  setGameState(s => {
-                    if (!s) return null;
-                    const chest = s.entities.find(e => e.id === s.activeChestId);
-                    if (!chest) return s;
-                    const item = chest.data.items.find((i: any) => i.id === it.id);
-                    if (!item) return s;
+    {gameState.isPaused && (
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-lg flex flex-col items-center justify-center z-[100] space-y-6">
+        <h2 className="text-4xl font-black text-white tracking-[0.5em] mb-6 animate-pulse uppercase italic">控制台挂起</h2>
+        <button onClick={() => setGameState(s => s ? { ...s, isPaused: false } : null)} className="w-64 py-4 bg-white text-black font-black uppercase tracking-[0.2em] rounded-xl active:scale-95 transition-transform shadow-lg">恢复传输</button>
+        <button onClick={() => setShowManual(true)} className="w-64 py-4 bg-zinc-800 border border-zinc-700 text-zinc-400 font-bold uppercase tracking-[0.2em] rounded-xl active:scale-95 transition-transform">任务简报</button>
+      </div>
+    )}
 
-                    // Add to player
-                    let p = { ...s.player };
-                    p.inventory.push(item);
-                    p = autoEquip(p, item);
+    {showManual && <GameManual onClose={() => setShowManual(false)} />}
 
-                    chest.data.items = chest.data.items.filter((i: any) => i.id !== it.id);
+    {gameState.isGameOver && (
+      <div className="fixed inset-0 bg-black z-[99999] flex flex-col items-center justify-center text-center p-10">
+        <h1 className="text-8xl font-black text-red-600 mb-4 flicker uppercase leading-none tracking-tighter">已牺牲</h1>
+        <p className="text-zinc-500 mb-16 italic text-sm tracking-[0.5em] font-bold uppercase">"{gameState.deathReason}"</p>
+        <button onClick={returnToMenu} className="px-12 py-4 bg-zinc-800 border border-zinc-700 text-white text-xs hover:bg-zinc-700 transition-all uppercase font-black tracking-[0.3em] rounded-lg active:scale-95">重启任务</button>
+      </div>
+    )}
 
-                    return { ...s, player: p };
-                  });
-                }} className="aspect-square bg-black border border-yellow-900/30 rounded-xl flex items-center justify-center text-2xl hover:bg-yellow-900/20 active:scale-95 transition-transform">
-                  {it.type === Types.ItemType.AMMO && ammoImgRef.current ? (
-                    <img src="/assets/ammo.png" alt="ammo" className="max-w-[80%] max-h-[80%] object-contain" />
-                  ) : (
-                    ITEM_ICONS[it.type as Types.ItemType]
-                  )}
-                </button>
-              ))}
-            </div>
-            <button onClick={() => setGameState(s => s ? { ...s, activeChestId: null } : null)} className="mt-auto w-full py-4 bg-zinc-800 rounded-xl text-zinc-400 font-bold uppercase tracking-widest">关闭</button>
+    {gameState.isVictory && (
+      <div className="fixed inset-0 bg-zinc-950 z-[99999] flex flex-col items-center justify-center text-center p-10 animate-fade-in">
+        <div className="absolute inset-0 bg-blue-500/10 pointer-events-none" />
+        <h1 className="text-8xl font-black text-cyan-400 mb-4 animate-pulse uppercase leading-none tracking-tighter drop-shadow-[0_0_20px_rgba(34,211,238,0.5)]">成功撤离</h1>
+        <p className="text-zinc-500 mb-8 italic text-sm tracking-[0.5em] font-bold uppercase">"核心系统已受控 // 任务圆满成功"</p>
+
+        {gameState.victorySpeech && (
+          <div className="max-w-md bg-zinc-900/80 border-l-4 border-cyan-500 p-6 mb-12 text-left animate-fade-in">
+            <div className="text-cyan-500 text-[10px] uppercase tracking-widest mb-2 font-bold font-mono">虚空低语 // VOID_ECHO</div>
+            <p className="text-zinc-300 italic text-sm leading-relaxed">"{gameState.victorySpeech}"</p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-4 mb-12 w-full max-w-sm">
+          <div className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-2xl">
+            <div className="text-zinc-500 text-[9px] uppercase tracking-widest mb-1 font-bold">生存时长</div>
+            <div className="text-2xl text-white font-mono">{Math.floor(gameState.survivalTime)}s</div>
+          </div>
+          <div className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-2xl">
+            <div className="text-zinc-500 text-[9px] uppercase tracking-widest mb-1 font-bold">虚空收割</div>
+            <div className="text-2xl text-red-500 font-mono">{gameState.monsterKills} 💀</div>
           </div>
         </div>
-      )}
+        <button onClick={returnToMenu} className="px-12 py-5 bg-cyan-600 border border-cyan-400 text-white hover:bg-cyan-500 transition-all uppercase font-black tracking-[0.3em] rounded-xl active:scale-95 shadow-lg shadow-cyan-900/40">返回主基地</button>
+      </div>
+    )}
 
-      {gameState.isPaused && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-lg flex flex-col items-center justify-center z-[100] space-y-6">
-          <h2 className="text-4xl font-black text-white tracking-[0.5em] mb-6 animate-pulse uppercase italic">控制台挂起</h2>
-          <button onClick={() => setGameState(s => s ? { ...s, isPaused: false } : null)} className="w-64 py-4 bg-white text-black font-black uppercase tracking-[0.2em] rounded-xl active:scale-95 transition-transform shadow-lg">恢复传输</button>
-          <button onClick={() => setShowManual(true)} className="w-64 py-4 bg-zinc-800 border border-zinc-700 text-zinc-400 font-bold uppercase tracking-[0.2em] rounded-xl active:scale-95 transition-transform">任务简报</button>
-        </div>
-      )}
-
-      {showManual && <GameManual onClose={() => setShowManual(false)} />}
-
-      {gameState.isGameOver && (
-        <div className="fixed inset-0 bg-black z-[99999] flex flex-col items-center justify-center text-center p-10">
-          <h1 className="text-8xl font-black text-red-600 mb-4 flicker uppercase leading-none tracking-tighter">已牺牲</h1>
-          <p className="text-zinc-500 mb-16 italic text-sm tracking-[0.5em] font-bold uppercase">"{gameState.deathReason}"</p>
-          <button onClick={returnToMenu} className="px-12 py-4 bg-zinc-800 border border-zinc-700 text-white text-xs hover:bg-zinc-700 transition-all uppercase font-black tracking-[0.3em] rounded-lg active:scale-95">重启任务</button>
-        </div>
-      )}
-
-      {gameState.isVictory && (
-        <div className="fixed inset-0 bg-zinc-950 z-[99999] flex flex-col items-center justify-center text-center p-10 animate-fade-in">
-          <div className="absolute inset-0 bg-blue-500/10 pointer-events-none" />
-          <h1 className="text-8xl font-black text-cyan-400 mb-4 animate-pulse uppercase leading-none tracking-tighter drop-shadow-[0_0_20px_rgba(34,211,238,0.5)]">成功撤离</h1>
-          <p className="text-zinc-500 mb-8 italic text-sm tracking-[0.5em] font-bold uppercase">"核心系统已受控 // 任务圆满成功"</p>
-
-          {gameState.victorySpeech && (
-            <div className="max-w-md bg-zinc-900/80 border-l-4 border-cyan-500 p-6 mb-12 text-left animate-fade-in">
-              <div className="text-cyan-500 text-[10px] uppercase tracking-widest mb-2 font-bold font-mono">虚空低语 // VOID_ECHO</div>
-              <p className="text-zinc-300 italic text-sm leading-relaxed">"{gameState.victorySpeech}"</p>
-            </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-4 mb-12 w-full max-w-sm">
-            <div className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-2xl">
-              <div className="text-zinc-500 text-[9px] uppercase tracking-widest mb-1 font-bold">生存时长</div>
-              <div className="text-2xl text-white font-mono">{Math.floor(gameState.survivalTime)}s</div>
-            </div>
-            <div className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-2xl">
-              <div className="text-zinc-500 text-[9px] uppercase tracking-widest mb-1 font-bold">虚空收割</div>
-              <div className="text-2xl text-red-500 font-mono">{gameState.monsterKills} 💀</div>
-            </div>
-          </div>
-          <button onClick={returnToMenu} className="px-12 py-5 bg-cyan-600 border border-cyan-400 text-white hover:bg-cyan-500 transition-all uppercase font-black tracking-[0.3em] rounded-xl active:scale-95 shadow-lg shadow-cyan-900/40">返回主基地</button>
-        </div>
-      )}
-
-    </div>
-  );
+  </div>
+);
 };
 
 export default App;
