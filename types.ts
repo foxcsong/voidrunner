@@ -59,7 +59,7 @@ export interface Player {
   equippedPocketId: string | null;
   sprinting: boolean;
   hitFlash?: number; // Visual feedback intensity (0-1)
-  actionState?: 'IDLE' | 'ATTACK_KNIFE' | 'ATTACK_GUN';
+  actionState?: 'IDLE' | 'ATTACK_KNIFE' | 'ATTACK_GUN' | 'RELOADING';
   actionTimer?: number;
 }
 
