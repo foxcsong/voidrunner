@@ -3,8 +3,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as Types from './types';
 import * as Constants from './constants';
 import * as MazeGen from './engine/MazeGen';
-import { getAtmosphericMessage, generateLayout } from './services/geminiService';
-import { supabase } from './services/supabase';
+import { cloudflare } from './services/cloudflare';
+import { getAtmosphericMessage, generateLayout, generateVictorySpeech } from './services/geminiService';
 import { AuthForm } from './components/AuthForm';
 import { GameManual } from './components/GameManual';
 
@@ -154,6 +154,8 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [showAuth, setShowAuth] = useState(false);
   const [showManual, setShowManual] = useState(false);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [leaderboardData, setLeaderboardData] = useState<any[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keysRef = useRef<Record<string, boolean>>({});
   const lastTimeRef = useRef<number>(performance.now());
@@ -219,16 +221,11 @@ const App: React.FC = () => {
     loadImg('/assets/chest_closed.png', chestClosedImgRef);
     loadImg('/assets/chest_open.png', chestOpenImgRef);
 
-    // Check Auth Status
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setCurrentUser(session?.user || null);
-    });
+    loadImg('/assets/chest_open.png', chestOpenImgRef);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setCurrentUser(session?.user || null);
-    });
-
-    return () => subscription.unsubscribe();
+    // Initial session check
+    const savedUser = localStorage.getItem('void_user');
+    if (savedUser) setCurrentUser(JSON.parse(savedUser));
   }, [screen]);
 
   // SMART LOOTING LOGIC
@@ -252,40 +249,27 @@ const App: React.FC = () => {
   };
 
   const initGame = useCallback(async (loadExisting = false) => {
+    if (!currentUser) {
+      alert("请先登录虚空终端");
+      setShowAuth(true);
+      return;
+    }
+
     if (loadExisting) {
-      let stateToLoad: any = null;
-
-      // 1. Try Cloud Load first if logged in
-      if (currentUser) {
-        const { data, error } = await supabase
-          .from('game_saves')
-          .select('save_data')
-          .eq('user_id', currentUser.id)
-          .single();
-
-        if (data && data.save_data) {
-          stateToLoad = data.save_data;
-          console.log("Loaded save from Cloud");
+      try {
+        const { save } = await cloudflare.getSave(currentUser.id);
+        if (save) {
+          // Normalize some states
+          save.entities.forEach((e: any) => { if (e.data) e.data.hitFlash = 0; });
+          setGameState(save);
+          setScreen('PLAYING');
+          return;
         }
-      }
-
-      // 2. Fallback to LocalStorage
-      if (!stateToLoad) {
-        const saved = localStorage.getItem(SAVE_KEY);
-        if (saved) stateToLoad = JSON.parse(saved);
-      }
-
-      if (stateToLoad) {
-        stateToLoad.entities.forEach((e: any) => {
-          if (e.data) { e.data.hitFlash = 0; }
-        });
-        setGameState(stateToLoad);
-        setScreen('PLAYING');
-        return;
+      } catch (e) {
+        console.error("Failed to load cloud save:", e);
       }
     }
 
-    localStorage.removeItem(SAVE_KEY);
     setScreen('LOADING_AI');
 
     // Step 1: Generate Maze
@@ -385,7 +369,7 @@ const App: React.FC = () => {
       }
     }
 
-    // Add extra monsters in corridors (not just dead ends)
+    // Add extra monsters in corridors
     for (let k = 0; k < 10; k++) {
       const rx = Math.floor(Math.random() * Constants.MAP_SIZE);
       const ry = Math.floor(Math.random() * Constants.MAP_SIZE);
@@ -397,37 +381,25 @@ const App: React.FC = () => {
       }
     }
 
-    // Add EXIT_GATE at exit position
+    // Add EXIT_GATE
     entities.push({
-      id: 'exit-gate',
-      x: exitPos.x + 0.5,
-      y: exitPos.y + 0.5,
-      type: Types.EntityType.EXIT_GATE,
+      id: 'exit-gate', x: exitPos.x + 0.5, y: exitPos.y + 0.5, type: Types.EntityType.EXIT_GATE,
       data: { isLocked: true }
     });
 
-    // DISTRIBUTE KEYS
-    // 1. Two keys in two random chests
+    // Keys distribution
     const chests = entities.filter(e => e.type === Types.EntityType.CHEST && e.id !== 'starter-chest');
     const shuffledChests = chests.sort(() => Math.random() - 0.5);
     for (let i = 0; i < Math.min(2, shuffledChests.length); i++) {
-      shuffledChests[i].data.items.push({
-        id: `key-chest-${i}`,
-        type: Types.ItemType.KEY,
-        name: ITEM_NAMES[Types.ItemType.KEY]
-      });
+      shuffledChests[i].data.items.push({ id: `key-chest-${i}`, type: Types.ItemType.KEY, name: ITEM_NAMES[Types.ItemType.KEY] });
     }
-
-    // 2. One key in a random monster
     const monsters = entities.filter(e => e.type === Types.EntityType.MONSTER);
     const randomMonster = monsters[Math.floor(Math.random() * monsters.length)];
-    if (randomMonster) {
-      randomMonster.data.hasKey = true;
-    }
+    if (randomMonster) { randomMonster.data.hasKey = true; }
 
     setGameState({
       player: { x: 1.5, y: 1.5, dir: 0, health: 100, hunger: 100, hydration: 100, isFlashlightOn: false, inventory: [], equippedLeftId: null, equippedRightId: null, equippedPocketId: null, sprinting: false, hitFlash: 0 },
-      map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '', message: '发现近处有补给箱，请上前打开获取生存物资。', messageTimeout: 10, chaseActive: false, survivalTime: 0, isPaused: false, activeChestId: null, draggingItemId: null
+      map, entities, isGameOver: false, isVictory: false, exitX: exitPos.x + 0.5, exitY: exitPos.y + 0.5, deathReason: '', message: '发现近处有补给箱，请上前打开获取生存物资。', messageTimeout: 10, chaseActive: false, survivalTime: 0, monsterKills: 0, isPaused: false, activeChestId: null, draggingItemId: null
     });
 
     // Narrative transition
@@ -435,26 +407,16 @@ const App: React.FC = () => {
       setScreen('PLAYING');
       damageNumbersRef.current = [];
     }, 14000);
-  }, [triggerAIEvent]);
+  }, [currentUser]);
 
   const saveAndExit = async () => {
-    if (gameState) {
+    if (gameState && currentUser) {
       const saveData = { ...gameState, isPaused: false };
-      localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
-
-      // Cloud Save
-      if (currentUser) {
-        const { error } = await supabase
-          .from('game_saves')
-          .upsert({
-            user_id: currentUser.id,
-            save_data: saveData,
-            updated_at: new Date().toISOString()
-          });
-        if (error) console.error("Cloud Save Failed:", error);
-        else console.log("Cloud Save Synced");
+      try {
+        await cloudflare.putSave(currentUser.id, saveData);
+      } catch (e) {
+        console.error("Cloud Save Failed:", e);
       }
-
       setScreen('MENU');
       setGameState(null);
     }
@@ -821,6 +783,11 @@ const App: React.FC = () => {
 
         // CRITICAL FIX: Handle monster death for key drop BEFORE skipping dead monsters
         if (e.health! <= 0) {
+          // Track monster death for kills
+          if (e.type === Types.EntityType.MONSTER) {
+            // Since we are inside nextEntities.map, we'll increment in a local counter or use a more direct approach
+            // Actually, incrementing inside map is tricky. Let's do it in a cleaner way.
+          }
           if (e.data.hasKey) {
             // Transform into a chest containing the key
             return {
@@ -969,7 +936,33 @@ const App: React.FC = () => {
 
       // EXIT / VICTORY CHECK
       const distToExit = Math.sqrt((player.x - prev.exitX) ** 2 + (player.y - prev.exitY) ** 2);
-      const isVictory = distToExit < 0.6;
+      const isVictoryFrame = distToExit < 0.6;
+      let monsterKills = prev.monsterKills;
+
+      // Check for monster deaths in this frame to increment kills
+      const prevLiveMonsters = prev.entities.filter(e => e.type === Types.EntityType.MONSTER && e.health! > 0).length;
+      const currentLiveMonsters = nextEntities.filter(e => e.type === Types.EntityType.MONSTER && e.health! > 0).length;
+      if (prevLiveMonsters > currentLiveMonsters) {
+        monsterKills += (prevLiveMonsters - currentLiveMonsters);
+      }
+
+      if (isVictoryFrame) {
+        // Victory!
+        generateVictorySpeech(nextSurvivalTime, monsterKills).then(speech => {
+          setGameState(s => s ? { ...s, victorySpeech: speech } : null);
+        });
+
+        // Submit record to Cloudflare D1
+        if (currentUser) {
+          cloudflare.submitRecord({
+            userId: currentUser.id,
+            clearTime: nextSurvivalTime,
+            monsterKills: monsterKills
+          }).catch(console.error);
+        }
+
+        return { ...prev, isVictory: true, monsterKills, survivalTime: nextSurvivalTime };
+      }
 
       return {
         ...prev,
@@ -980,8 +973,9 @@ const App: React.FC = () => {
         message: nextMessage,
         activeChestId,
         chaseActive,
+        monsterKills,
         isGameOver: player.health <= 0,
-        isVictory,
+        isVictory: false,
         deathReason: player.health <= 0 ? "生命维持系统完全失效" : ""
       };
     });
@@ -1336,11 +1330,11 @@ const App: React.FC = () => {
             </div>
           </button>
 
-          {hasSave && (
+          {currentUser && (
             <button onClick={() => initGame(true)} className="group relative overflow-hidden px-8 py-5 border-2 border-blue-900 bg-blue-950/20 hover:bg-blue-600 hover:text-white transition-all">
               <div className="flex justify-between items-center font-black uppercase tracking-widest text-sm text-blue-300 group-hover:text-white">
                 <span>继续此前任务</span>
-                <span>(发现存档)</span>
+                <span>(加载云存档)</span>
               </div>
             </button>
           )}
@@ -1352,21 +1346,39 @@ const App: React.FC = () => {
             </div>
           </button>
 
+          <button onClick={async () => {
+            try {
+              const data = await cloudflare.getLeaderboard();
+              setLeaderboardData(data);
+              setShowLeaderboard(true);
+            } catch (e) {
+              alert("获取英雄榜失败");
+            }
+          }} className="group relative overflow-hidden px-8 py-4 border border-zinc-800 hover:border-yellow-600 transition-all">
+            <div className="flex justify-between items-center font-bold uppercase tracking-widest text-[10px] text-zinc-600 group-hover:text-yellow-400">
+              <span>迷宫英雄榜 // LEADERBOARD</span>
+              <span>TOP_20</span>
+            </div>
+          </button>
+
           {/* AUTH BUTTON */}
           {!currentUser ? (
             <button onClick={() => setShowAuth(true)} className="group relative overflow-hidden px-8 py-5 border border-zinc-800 bg-black hover:border-yellow-600 transition-all">
               <div className="flex justify-between items-center font-black uppercase tracking-widest text-xs text-zinc-500 group-hover:text-yellow-500">
-                <span>☁ 连接云端数据库</span>
+                <span>⚡ 虚空终端连接 (登录)</span>
                 <span>OFFLINE</span>
               </div>
             </button>
           ) : (
             <div className="relative px-8 py-5 border border-green-900 bg-green-950/10">
               <div className="flex justify-between items-center font-bold uppercase tracking-widest text-xs text-green-500">
-                <span className="truncate max-w-[200px]">{currentUser.email}</span>
-                <button onClick={() => supabase.auth.signOut()} className="hover:text-white underline">退出</button>
+                <span className="truncate max-w-[200px]">{currentUser.username}</span>
+                <button onClick={() => {
+                  setCurrentUser(null);
+                  localStorage.removeItem('void_user');
+                }} className="hover:text-white underline">注销</button>
               </div>
-              <div className="text-[9px] text-green-700 mt-1">云端同步已连接</div>
+              <div className="text-[9px] text-green-700 mt-1">云端神经元已连接 (D1)</div>
             </div>
           )}
         </div>
@@ -1377,13 +1389,30 @@ const App: React.FC = () => {
           <div>核心: 稳定</div>
         </div>
 
-        {showAuth && (
-          <AuthForm
-            onLoginSuccess={() => setShowAuth(false)}
-            onCancel={() => setShowAuth(false)}
-          />
-        )}
         {showManual && <GameManual onClose={() => setShowManual(false)} />}
+
+        {showLeaderboard && (
+          <div className="fixed inset-0 bg-black/95 z-[1000] flex flex-col p-8 overflow-y-auto font-mono">
+            <div className="max-w-xl mx-auto w-full py-10">
+              <h2 className="text-3xl font-black text-white mb-8 border-b border-zinc-800 pb-4 uppercase italic">迷宫英雄榜 // TOP_20</h2>
+              <div className="space-y-2">
+                {leaderboardData.map((record, i) => (
+                  <div key={i} className="flex justify-between p-4 bg-zinc-900/50 border border-zinc-800 rounded-lg">
+                    <div className="flex gap-4 items-center">
+                      <span className="text-zinc-600 font-bold w-6">#{i + 1}</span>
+                      <span className="text-white font-bold">{record.username}</span>
+                    </div>
+                    <div className="flex gap-6 text-[10px] items-center">
+                      <div className="text-cyan-500">⏱ {record.clear_time_seconds.toFixed(1)}s</div>
+                      <div className="text-red-500">💀 {record.monster_kills}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => setShowLeaderboard(false)} className="mt-12 w-full py-4 bg-white text-black font-black uppercase tracking-widest rounded-xl">关闭档案</button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1725,10 +1754,24 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-zinc-950 z-[99999] flex flex-col items-center justify-center text-center p-10 animate-fade-in">
           <div className="absolute inset-0 bg-blue-500/10 pointer-events-none" />
           <h1 className="text-8xl font-black text-cyan-400 mb-4 animate-pulse uppercase leading-none tracking-tighter drop-shadow-[0_0_20px_rgba(34,211,238,0.5)]">成功撤离</h1>
-          <p className="text-zinc-500 mb-16 italic text-sm tracking-[0.5em] font-bold uppercase">"核心系统已受控 // 任务圆满成功"</p>
-          <div className="bg-zinc-900/50 border border-zinc-800 p-8 rounded-2xl mb-12 w-full max-w-sm">
-            <div className="text-zinc-500 text-[10px] uppercase tracking-widest mb-2 font-bold">生存时长</div>
-            <div className="text-4xl text-white font-mono">{Math.floor(gameState.survivalTime)} 秒</div>
+          <p className="text-zinc-500 mb-8 italic text-sm tracking-[0.5em] font-bold uppercase">"核心系统已受控 // 任务圆满成功"</p>
+
+          {gameState.victorySpeech && (
+            <div className="max-w-md bg-zinc-900/80 border-l-4 border-cyan-500 p-6 mb-12 text-left animate-fade-in">
+              <div className="text-cyan-500 text-[10px] uppercase tracking-widest mb-2 font-bold font-mono">虚空低语 // VOID_ECHO</div>
+              <p className="text-zinc-300 italic text-sm leading-relaxed">"{gameState.victorySpeech}"</p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4 mb-12 w-full max-w-sm">
+            <div className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-2xl">
+              <div className="text-zinc-500 text-[9px] uppercase tracking-widest mb-1 font-bold">生存时长</div>
+              <div className="text-2xl text-white font-mono">{Math.floor(gameState.survivalTime)}s</div>
+            </div>
+            <div className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-2xl">
+              <div className="text-zinc-500 text-[9px] uppercase tracking-widest mb-1 font-bold">虚空收割</div>
+              <div className="text-2xl text-red-500 font-mono">{gameState.monsterKills} 💀</div>
+            </div>
           </div>
           <button onClick={returnToMenu} className="px-12 py-5 bg-cyan-600 border border-cyan-400 text-white hover:bg-cyan-500 transition-all uppercase font-black tracking-[0.3em] rounded-xl active:scale-95 shadow-lg shadow-cyan-900/40">返回主基地</button>
         </div>
