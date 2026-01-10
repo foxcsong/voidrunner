@@ -83,10 +83,18 @@ def smart_remove_bg(img_path, tolerance=40):
     except Exception as e:
         print(f"Error on {img_path}: {e}")
 
-assets = [
-    'public/assets/player_knife.png',
-    'public/assets/player_shoot.png'
-]
+import sys
 
-for asset in assets:
-    smart_remove_bg(asset)
+if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        # Process specific file from CLI
+        target = sys.argv[1]
+        smart_remove_bg(target)
+    else:
+        # Default behavior
+        assets = [
+            'public/assets/player_knife.png',
+            'public/assets/player_shoot.png'
+        ]
+        for asset in assets:
+            smart_remove_bg(asset)

@@ -176,6 +176,7 @@ const App: React.FC = () => {
   const floorImgRef = useRef<HTMLImageElement | null>(null);
   const chestClosedImgRef = useRef<HTMLImageElement | null>(null);
   const chestOpenImgRef = useRef<HTMLImageElement | null>(null);
+  const ammoImgRef = useRef<HTMLImageElement | null>(null);
 
   const particlesRef = useRef<Particle[]>([]);
   const nextParticleIdRef = useRef(0);
@@ -223,6 +224,7 @@ const App: React.FC = () => {
     loadImg('/assets/floor.png', floorImgRef);
     loadImg('/assets/chest_closed.png', chestClosedImgRef);
     loadImg('/assets/chest_open.png', chestOpenImgRef);
+    loadImg('/assets/ammo.png', ammoImgRef);
 
     loadImg('/assets/chest_open.png', chestOpenImgRef);
 
@@ -1562,9 +1564,15 @@ const App: React.FC = () => {
 
           <div className="grid grid-cols-4 gap-4 overflow-y-auto content-start pb-20">
             {player.inventory.map(item => (
-              <div key={item.id} className="aspect-square bg-zinc-800/50 border border-zinc-700 rounded-xl p-1 flex flex-col items-center justify-between relative group">
-                <div className="text-2xl mt-1">{ITEM_ICONS[item.type]}</div>
-                <div className="text-[9px] text-zinc-500 truncate w-full text-center">{item.name}</div>
+              <div key={item.id} className="aspect-square bg-zinc-800/50 border border-zinc-700 rounded-xl p-1 flex flex-col items-center justify-center relative group">
+                <div className="flex-1 flex items-center justify-center w-full min-h-0">
+                  {item.type === Types.ItemType.AMMO && ammoImgRef.current ? (
+                    <img src="/assets/ammo.png" alt="ammo" className="max-w-[80%] max-h-[80%] object-contain" />
+                  ) : (
+                    <div className="text-2xl">{ITEM_ICONS[item.type]}</div>
+                  )}
+                </div>
+                <div className="text-[9px] text-zinc-500 truncate w-full text-center pb-1">{item.name}</div>
                 {item.count !== undefined && <div className="absolute top-1 right-1 text-[8px] bg-zinc-700 px-1 rounded text-white">{item.count}</div>}
 
                 {/* Equip Overlay */}
@@ -1641,7 +1649,13 @@ const App: React.FC = () => {
           <div className="text-[9px] absolute top-2 text-zinc-500 font-bold tracking-widest uppercase">左手</div>
           {eL ? (
             <>
-              <div className="text-4xl pb-2">{ITEM_ICONS[eL.type]}</div>
+              <div className="flex-1 flex items-center justify-center w-full min-h-0">
+                {eL.type === Types.ItemType.AMMO && ammoImgRef.current ? (
+                  <img src="/assets/ammo.png" alt="ammo" className="max-w-[70%] max-h-[70%] object-contain mb-4" />
+                ) : (
+                  <div className="text-4xl pb-2">{ITEM_ICONS[eL.type]}</div>
+                )}
+              </div>
               <div className="absolute bottom-2 left-0 w-full flex justify-center">
                 <div className="text-[9px] text-zinc-400 font-bold bg-zinc-950/50 px-2 rounded mb-1">{eL.name}</div>
               </div>
@@ -1661,7 +1675,13 @@ const App: React.FC = () => {
           <div className="text-[9px] absolute top-2 text-zinc-500 font-bold tracking-widest uppercase">储备口袋</div>
           {eP ? (
             <>
-              <div className="text-4xl pb-2">{ITEM_ICONS[eP.type]}</div>
+              <div className="flex-1 flex items-center justify-center w-full min-h-0">
+                {eP.type === Types.ItemType.AMMO && ammoImgRef.current ? (
+                  <img src="/assets/ammo.png" alt="ammo" className="max-w-[70%] max-h-[70%] object-contain mb-4" />
+                ) : (
+                  <div className="text-4xl pb-2">{ITEM_ICONS[eP.type]}</div>
+                )}
+              </div>
               <div className="absolute bottom-2 left-0 w-full flex justify-center">
                 <div className="text-[9px] text-zinc-400 font-bold bg-zinc-950/50 px-2 rounded mb-1">{eP.name}</div>
               </div>
@@ -1679,7 +1699,13 @@ const App: React.FC = () => {
           <div className="text-[9px] absolute top-2 text-red-500/50 font-bold tracking-widest uppercase">战备位</div>
           {eR ? (
             <>
-              <div className="text-4xl pb-2">{ITEM_ICONS[eR.type]}</div>
+              <div className="flex-1 flex items-center justify-center w-full min-h-0">
+                {eR.type === Types.ItemType.AMMO && ammoImgRef.current ? (
+                  <img src="/assets/ammo.png" alt="ammo" className="max-w-[70%] max-h-[70%] object-contain mb-4" />
+                ) : (
+                  <div className="text-4xl pb-2">{ITEM_ICONS[eR.type]}</div>
+                )}
+              </div>
               <div className="absolute bottom-2 left-0 w-full flex justify-center">
                 <div className="text-[9px] text-red-400 font-bold bg-black/40 px-2 rounded border border-red-900/30 mb-1">{eR.name}</div>
               </div>
