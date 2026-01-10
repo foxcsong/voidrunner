@@ -1721,7 +1721,7 @@ const App: React.FC = () => {
                     </div>
                     <div className="flex gap-4 md:gap-6 text-[11px] items-center font-mono">
                       <div className="text-cyan-400 flex items-center gap-1">
-                        <span className="opacity-50">⏱ 撤离时长:</span>{record.clear_time_seconds.toFixed(1)}s
+                        <span className="opacity-50">🌌 迷宫层数:</span>Level {record.depth || 1}
                       </div>
                       <div className="text-red-500 flex items-center gap-1">
                         <span className="opacity-50">💀</span>{record.monster_kills}
