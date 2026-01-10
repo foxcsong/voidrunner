@@ -46,6 +46,26 @@ export const onRequest = async (context: any) => {
         const passwordHash = btoa(String.fromCharCode(...new Uint8Array(derivedKeyBuffer)));
 
         if (action === 'register') {
+            // SENSITIVE WORD FILTERING & CHINESE SUPPORT
+            const sWords = ['管理员', 'admin', 'system', '系统', '官方', 'official', '敏感词1', '敏感词2']; // 可扩展
+            const hasSensitiveRaw = sWords.some(w => username.toLowerCase().includes(w.toLowerCase()));
+
+            if (hasSensitiveRaw) {
+                return new Response(JSON.stringify({ error: '用户名包含违禁词汇' }), {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+
+            // Username length and character check (Allows Chinese, Alphanumeric, Underscore)
+            const nameRegex = /^[\u4e00-\u9fa5a-zA-Z0-9_]{2,12}$/;
+            if (!nameRegex.test(username)) {
+                return new Response(JSON.stringify({ error: '用户名需为2-12位中文、字母或数字' }), {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+
             try {
                 await env.DB.prepare(
                     "INSERT INTO users (username, password_hash) VALUES (?, ?)"

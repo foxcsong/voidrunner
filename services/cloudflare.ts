@@ -46,5 +46,40 @@ export const cloudflare = {
         });
         if (!res.ok) throw new Error('提交记录失败');
         return await res.json();
+    },
+
+    // --- ADMIN FUNCTIONS ---
+    async adminListUsers(secret: string, search?: string) {
+        const res = await fetch(`/api/admin?action=list${search ? `&search=${encodeURIComponent(search)}` : ''}`, {
+            headers: { 'Authorization': secret }
+        });
+        if (!res.ok) throw new Error('获取用户列表失败');
+        return await res.json();
+    },
+
+    async adminDeleteUser(secret: string, userId: number) {
+        const res = await fetch('/api/admin?action=delete', {
+            method: 'POST',
+            body: JSON.stringify({ userId }),
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': secret
+            }
+        });
+        if (!res.ok) throw new Error('删除用户失败');
+        return await res.json();
+    },
+
+    async adminResetPassword(secret: string, userId: number, username: string) {
+        const res = await fetch('/api/admin?action=reset_password', {
+            method: 'POST',
+            body: JSON.stringify({ userId, username }),
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': secret
+            }
+        });
+        if (!res.ok) throw new Error('重置密码失败');
+        return await res.json();
     }
 };

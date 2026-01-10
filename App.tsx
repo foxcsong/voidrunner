@@ -7,6 +7,7 @@ import { cloudflare } from './services/cloudflare';
 import { getAtmosphericMessage, generateLayout, generateVictorySpeech } from './services/geminiService';
 import { AuthForm } from './components/AuthForm';
 import { GameManual } from './components/GameManual';
+import { AdminPanel } from './components/AdminPanel';
 
 const ITEM_ICONS: Record<Types.ItemType, string> = {
   [Types.ItemType.FOOD]: '🍞',
@@ -155,6 +156,8 @@ const App: React.FC = () => {
   const [showAuth, setShowAuth] = useState(false);
   const [showManual, setShowManual] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [versionClickCount, setVersionClickCount] = useState(0);
   const [leaderboardData, setLeaderboardData] = useState<any[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keysRef = useRef<Record<string, boolean>>({});
@@ -1310,7 +1313,20 @@ const App: React.FC = () => {
       <div className="w-screen h-screen bg-black flex flex-col items-center justify-center p-10 font-mono text-zinc-100">
         <div className="absolute inset-0 bg-blue-900/5 pointer-events-none" />
         <h1 className="text-7xl font-black tracking-widest mb-2 animate-pulse text-zinc-50 text-center">无尽虚空：迷宫</h1>
-        <p className="text-zinc-500 mb-16 tracking-[0.5em] text-[10px] uppercase">迷宫生存模拟器 v3.2</p>
+        <p
+          className="text-zinc-500 mb-16 tracking-[0.5em] text-[10px] uppercase cursor-pointer select-none"
+          onClick={() => {
+            setVersionClickCount(prev => {
+              if (prev + 1 >= 5) {
+                setShowAdmin(true);
+                return 0;
+              }
+              return prev + 1;
+            });
+          }}
+        >
+          迷宫生存模拟器 v3.2
+        </p>
 
         <div className="flex flex-col gap-6 w-96 relative z-10">
           <button onClick={() => initGame(false)} className="group relative overflow-hidden px-8 py-5 border border-zinc-700 bg-zinc-900/50 hover:bg-zinc-50 hover:text-black transition-all">
@@ -1380,6 +1396,8 @@ const App: React.FC = () => {
         </div>
 
         {showManual && <GameManual onClose={() => setShowManual(false)} />}
+
+        {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
 
         {showAuth && (
           <AuthForm
