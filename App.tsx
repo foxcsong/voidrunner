@@ -44,6 +44,16 @@ interface Particle {
   size: number;
 }
 
+interface BulletTrail {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  startTime: number;
+  duration: number; // ms
+  color: string;
+}
+
 const isLineOfSightClear = (x1: number, y1: number, x2: number, y2: number, map: number[][]) => {
   const dist = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
   const steps = Math.min(dist * 10, 50);
@@ -164,6 +174,8 @@ const App: React.FC = () => {
   const lastTimeRef = useRef<number>(performance.now());
   const lastShotTimeRef = useRef<number>(0);
   const frameIdRef = useRef<number>(0);
+  const damageNumbersRef = useRef<Types.DamageNumber[]>([]);
+  const bulletTrailsRef = useRef<BulletTrail[]>([]);
   const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Asset Refs
@@ -182,7 +194,6 @@ const App: React.FC = () => {
   const particlesRef = useRef<Particle[]>([]);
   const nextParticleIdRef = useRef(0);
 
-  const damageNumbersRef = useRef<Types.DamageNumber[]>([]);
   const nextDamageNumberIdRef = useRef(0);
 
   const touchStartRef = useRef<{ x: number, y: number, time: number } | null>(null);
@@ -458,6 +469,7 @@ const App: React.FC = () => {
     loadingTimeoutRef.current = setTimeout(() => {
       setScreen('PLAYING');
       damageNumbersRef.current = [];
+      bulletTrailsRef.current = [];
     }, 14000);
   }, [currentUser]);
 
@@ -574,6 +586,18 @@ const App: React.FC = () => {
           message: '武器开火',
           messageTimeout: 0.5
         };
+      });
+
+      // ADD BULLET TRAIL
+      // Spread trails slightly for effect or just direct line
+      bulletTrailsRef.current.push({
+        x1: player.x,
+        y1: player.y - 0.2, // Shoot from slightly higher/center
+        x2: clickX + (Math.random() - 0.5) * 0.1,
+        y2: clickY + (Math.random() - 0.5) * 0.1,
+        startTime: performance.now(),
+        duration: 150, // fast fade
+        color: '#22d3ee' // Cyan laser
       });
 
       newEntities = newEntities.map(e => {
@@ -1381,6 +1405,41 @@ const App: React.FC = () => {
     renderList.sort((a, b) => a.y - b.y);
     renderList.forEach(item => item.draw());
 
+    // DRAW BULLET TRAILS (On top of entities, glowing)
+    const now = performance.now();
+    ctx.save();
+    // Use lighter for additive blending (glow)
+    ctx.globalCompositeOperation = 'lighter';
+    bulletTrailsRef.current = bulletTrailsRef.current.filter(trail => {
+      const age = now - trail.startTime;
+      if (age > trail.duration) return false;
+
+      const progress = age / trail.duration;
+      const alpha = 1 - progress;
+
+      const startSx = trail.x1 * s;
+      const startSy = trail.y1 * s;
+      const endSx = trail.x2 * s;
+      const endSy = trail.y2 * s;
+
+      // Core beam
+      ctx.beginPath();
+      ctx.moveTo(startSx, startSy);
+      ctx.lineTo(endSx, endSy);
+      ctx.strokeStyle = `rgba(34, 211, 238, ${alpha})`;
+      ctx.lineWidth = 4 * (1 - progress);
+      ctx.stroke();
+
+      // Outer glow
+      ctx.beginPath();
+      ctx.moveTo(startSx, startSy);
+      ctx.lineTo(endSx, endSy);
+      ctx.strokeStyle = `rgba(100, 255, 255, ${alpha * 0.5})`;
+      ctx.lineWidth = 8 * (1 - progress);
+      ctx.stroke();
+
+      return true;
+    });
     ctx.restore();
 
     // DYNAMIC VISION MASK
