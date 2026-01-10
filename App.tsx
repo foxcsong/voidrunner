@@ -330,7 +330,15 @@ const App: React.FC = () => {
       if (entityType === Types.EntityType.CHEST) {
         const itemCount = Math.floor(Math.random() * 2) + 1;
         for (let j = 0; j < itemCount; j++) {
-          let itType = [Types.ItemType.FOOD, Types.ItemType.WATER, Types.ItemType.KNIFE, Types.ItemType.AMMO, Types.ItemType.BATTERY][Math.floor(Math.random() * 5)];
+          // ITEM GENERATION - Reduce KNIFE probability to ~5% (1/4 of previous 20%)
+          const itemPool = [
+            Types.ItemType.FOOD, Types.ItemType.FOOD, Types.ItemType.FOOD, Types.ItemType.FOOD,
+            Types.ItemType.WATER, Types.ItemType.WATER, Types.ItemType.WATER, Types.ItemType.WATER,
+            Types.ItemType.AMMO, Types.ItemType.AMMO, Types.ItemType.AMMO, Types.ItemType.AMMO,
+            Types.ItemType.BATTERY, Types.ItemType.BATTERY, Types.ItemType.BATTERY, Types.ItemType.BATTERY,
+            Types.ItemType.KNIFE // Only 1 knife in a pool of 17 (approx 1/4 of 1/5)
+          ];
+          let itType = itemPool[Math.floor(Math.random() * itemPool.length)];
 
           // Force gun placement
           if (!gunSpawned && dist >= 6 && dist <= 15) {
@@ -1767,7 +1775,11 @@ const App: React.FC = () => {
                     return { ...s, player: p };
                   });
                 }} className="aspect-square bg-black border border-yellow-900/30 rounded-xl flex items-center justify-center text-2xl hover:bg-yellow-900/20 active:scale-95 transition-transform">
-                  {ITEM_ICONS[it.type as Types.ItemType]}
+                  {it.type === Types.ItemType.AMMO && ammoImgRef.current ? (
+                    <img src="/assets/ammo.png" alt="ammo" className="max-w-[80%] max-h-[80%] object-contain" />
+                  ) : (
+                    ITEM_ICONS[it.type as Types.ItemType]
+                  )}
                 </button>
               ))}
             </div>
