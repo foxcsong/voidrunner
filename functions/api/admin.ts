@@ -21,20 +21,36 @@ export const onRequest = async (context: any) => {
             ).bind(query).all();
             return new Response(JSON.stringify(users.results), { headers: { 'Content-Type': 'application/json' } });
         }
+
+        if (action === 'list_records') {
+            // Join with users to show usernames
+            const records = await env.DB.prepare(`
+                SELECT r.id, r.user_id, u.username, r.clear_time_seconds, r.monster_kills, r.created_at 
+                FROM clear_records r 
+                JOIN users u ON r.user_id = u.id 
+                ORDER BY r.created_at DESC LIMIT 200
+            `).all();
+            return new Response(JSON.stringify(records.results), { headers: { 'Content-Type': 'application/json' } });
+        }
+
         return new Response('Method Not Allowed', { status: 405 });
     }
 
-    const { userId, username } = await request.json();
+    const { userId, username, recordId } = await request.json();
 
     try {
         if (action === 'delete') {
-            // Cascade delete: D1 doesn't always support it via config if not set, so we do it manually for safety
             await env.DB.batch([
                 env.DB.prepare("DELETE FROM game_saves WHERE user_id = ?").bind(userId),
                 env.DB.prepare("DELETE FROM clear_records WHERE user_id = ?").bind(userId),
                 env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId)
             ]);
             return new Response(JSON.stringify({ success: true, message: '用户已抹除' }));
+        }
+
+        if (action === 'delete_record') {
+            await env.DB.prepare("DELETE FROM clear_records WHERE id = ?").bind(recordId).run();
+            return new Response(JSON.stringify({ success: true, message: '通关记录已删除' }));
         }
 
         if (action === 'reset_password') {

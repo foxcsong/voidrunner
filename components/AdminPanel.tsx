@@ -6,10 +6,14 @@ interface AdminPanelProps {
     onClose: () => void;
 }
 
+type AdminTab = 'USERS' | 'RECORDS';
+
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     const [secret, setSecret] = useState('');
     const [isAuth, setIsAuth] = useState(false);
+    const [activeTab, setActiveTab] = useState<AdminTab>('USERS');
     const [users, setUsers] = useState<any[]>([]);
+    const [records, setRecords] = useState<any[]>([]);
     const [search, setSearch] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -40,7 +44,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         }
     };
 
-    const handleDelete = async (userId: number, username: string) => {
+    const fetchRecords = async () => {
+        setLoading(true);
+        try {
+            const data = await cloudflare.adminListRecords(secret);
+            setRecords(data);
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (isAuth) {
+            if (activeTab === 'USERS') fetchUsers();
+            if (activeTab === 'RECORDS') fetchRecords();
+        }
+    }, [activeTab, isAuth]);
+
+    const handleDeleteUser = async (userId: number, username: string) => {
         if (!window.confirm(`确认彻底抹除探险员 [${username}] 及其所有平行时空数据（存档/战绩）吗？`)) return;
         try {
             await cloudflare.adminDeleteUser(secret, userId);
@@ -50,11 +73,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
         }
     };
 
-    const handleReset = async (userId: number, username: string) => {
+    const handleResetPassword = async (userId: number, username: string) => {
         if (!window.confirm(`确认将 [${username}] 的安全密钥强制重置为 123456 吗？`)) return;
         try {
             const res = await cloudflare.adminResetPassword(secret, userId, username);
             alert(res.message);
+        } catch (err: any) {
+            alert(err.message);
+        }
+    };
+
+    const handleDeleteRecord = async (recordId: number) => {
+        if (!window.confirm(`确认删除该条通关记录吗？此操作不可恢复。`)) return;
+        try {
+            await cloudflare.adminDeleteRecord(secret, recordId);
+            fetchRecords();
         } catch (err: any) {
             alert(err.message);
         }
@@ -94,51 +127,103 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     return (
         <div className="fixed inset-0 bg-black/98 z-[2000] flex flex-col p-8 font-mono overflow-hidden">
             <div className="max-w-4xl mx-auto w-full flex flex-col h-full">
-                <div className="flex justify-between items-end mb-10 border-b border-zinc-800 pb-6">
+                <div className="flex justify-between items-end mb-6 border-b border-zinc-800 pb-6">
                     <div>
                         <h2 className="text-3xl font-black text-white tracking-tighter uppercase italic">虚空终端管理 // MASTER_CONTROL</h2>
-                        <div className="text-[10px] text-zinc-600 mt-1 tracking-widest uppercase">底层用户数据库实时访问脉冲</div>
+                        <div className="text-[10px] text-zinc-600 mt-1 tracking-widest uppercase">底层数据库实时逻辑切片访问</div>
                     </div>
                     <button onClick={onClose} className="px-6 py-2 border border-zinc-800 text-zinc-500 hover:text-white hover:border-white transition-all text-xs uppercase font-bold">断开连接</button>
                 </div>
 
+                {/* Tabs */}
                 <div className="flex gap-4 mb-8">
-                    <input
-                        type="text"
-                        placeholder="通过探险员代号模糊搜索..."
-                        className="flex-1 bg-zinc-900 border border-zinc-800 text-white px-6 py-4 rounded-xl outline-none focus:border-cyan-600 transition-all"
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && fetchUsers()}
-                    />
-                    <button onClick={fetchUsers} className="px-8 bg-white text-black font-black uppercase rounded-xl hover:bg-cyan-500 hover:text-white transition-all">执行搜索</button>
+                    <button
+                        onClick={() => setActiveTab('USERS')}
+                        className={`px-6 py-3 rounded-xl font-bold uppercase tracking-widest text-xs transition-all ${activeTab === 'USERS' ? 'bg-white text-black' : 'bg-zinc-900 text-zinc-500 border border-zinc-800'}`}
+                    >
+                        探险员管理
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('RECORDS')}
+                        className={`px-6 py-3 rounded-xl font-bold uppercase tracking-widest text-xs transition-all ${activeTab === 'RECORDS' ? 'bg-white text-black' : 'bg-zinc-900 text-zinc-500 border border-zinc-800'}`}
+                    >
+                        通关记录史
+                    </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
-                    {users.length === 0 && <div className="text-center py-20 text-zinc-700 uppercase font-bold tracking-widest italic text-xs">没有检测到匹配的意识特征</div>}
-                    {users.map(u => (
-                        <div key={u.id} className="flex justify-between items-center p-6 bg-zinc-900/30 border border-zinc-900 hover:border-zinc-700 transition-all rounded-2xl group">
-                            <div>
-                                <div className="text-white font-black text-lg tracking-tight mb-1">{u.username} <span className="text-[10px] text-zinc-700 ml-2">#ID_{u.id}</span></div>
-                                <div className="text-[10px] text-zinc-600 uppercase font-bold tracking-widest">首次记录时间: {new Date(u.created_at).toLocaleString()}</div>
-                            </div>
-                            <div className="flex gap-3 scale-95 origin-right group-hover:scale-100 transition-transform">
-                                <button
-                                    onClick={() => handleReset(u.id, u.username)}
-                                    className="px-4 py-2 border border-yellow-900/50 text-yellow-600 hover:bg-yellow-600 hover:text-white rounded-lg text-[10px] font-black uppercase transition-all"
-                                >
-                                    重置密码 (123456)
-                                </button>
-                                <button
-                                    onClick={() => handleDelete(u.id, u.username)}
-                                    className="px-4 py-2 border border-red-900/50 text-red-600 hover:bg-red-600 hover:text-white rounded-lg text-[10px] font-black uppercase transition-all"
-                                >
-                                    彻底抹除
-                                </button>
-                            </div>
+                {activeTab === 'USERS' && (
+                    <>
+                        <div className="flex gap-4 mb-8">
+                            <input
+                                type="text"
+                                placeholder="通过代号模糊搜索探险员..."
+                                className="flex-1 bg-zinc-900 border border-zinc-800 text-white px-6 py-4 rounded-xl outline-none focus:border-cyan-600 transition-all"
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && fetchUsers()}
+                            />
+                            <button onClick={fetchUsers} className="px-8 bg-white text-black font-black uppercase rounded-xl hover:bg-cyan-500 hover:text-white transition-all">执行搜索</button>
                         </div>
-                    ))}
-                </div>
+
+                        <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                            {users.length === 0 && <div className="text-center py-20 text-zinc-700 uppercase font-bold tracking-widest italic text-xs">没有检测到匹配的意识特征</div>}
+                            {users.map(u => (
+                                <div key={u.id} className="flex justify-between items-center p-6 bg-zinc-900/30 border border-zinc-900 hover:border-zinc-700 transition-all rounded-2xl group">
+                                    <div>
+                                        <div className="text-white font-black text-lg tracking-tight mb-1">{u.username} <span className="text-[10px] text-zinc-700 ml-2">#ID_{u.id}</span></div>
+                                        <div className="text-[10px] text-zinc-600 uppercase font-bold tracking-widest">首次记录时间: {new Date(u.created_at).toLocaleString()}</div>
+                                    </div>
+                                    <div className="flex gap-3 scale-95 origin-right group-hover:scale-100 transition-transform">
+                                        <button
+                                            onClick={() => handleResetPassword(u.id, u.username)}
+                                            className="px-4 py-2 border border-yellow-900/50 text-yellow-600 hover:bg-yellow-600 hover:text-white rounded-lg text-[10px] font-black uppercase transition-all"
+                                        >
+                                            重置密码
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeleteUser(u.id, u.username)}
+                                            className="px-4 py-2 border border-red-900/50 text-red-600 hover:bg-red-600 hover:text-white rounded-lg text-[10px] font-black uppercase transition-all"
+                                        >
+                                            彻底抹除
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </>
+                )}
+
+                {activeTab === 'RECORDS' && (
+                    <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                        {records.length === 0 && <div className="text-center py-20 text-zinc-700 uppercase font-bold tracking-widest italic text-xs">尚无任何通关记录通过虚空审查</div>}
+                        {records.map(r => (
+                            <div key={r.id} className="flex justify-between items-center p-6 bg-zinc-900/30 border border-zinc-900 hover:border-zinc-700 transition-all rounded-2xl group">
+                                <div className="flex-1 grid grid-cols-3 gap-8">
+                                    <div>
+                                        <div className="text-white font-black text-lg tracking-tight mb-1">{r.username}</div>
+                                        <div className="text-[10px] text-zinc-600 uppercase font-bold tracking-widest">RECORD_ID_{r.id}</div>
+                                    </div>
+                                    <div className="flex flex-col justify-center">
+                                        <div className="text-cyan-500 font-black text-xl italic">{r.clear_time_seconds.toFixed(1)}s</div>
+                                        <div className="text-[9px] text-zinc-600 uppercase">通关耗时 // CLEAR_TIME</div>
+                                    </div>
+                                    <div className="flex flex-col justify-center">
+                                        <div className="text-red-500 font-black text-xl italic">{r.monster_kills}</div>
+                                        <div className="text-[9px] text-zinc-600 uppercase">虚空收割 // KILLS</div>
+                                    </div>
+                                </div>
+                                <div className="flex items-center ml-4">
+                                    <button
+                                        onClick={() => handleDeleteRecord(r.id)}
+                                        className="px-6 py-2 border border-red-900/50 text-red-600 hover:bg-red-600 hover:text-white rounded-lg text-[10px] font-black uppercase transition-all"
+                                    >
+                                        删除记录
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );
