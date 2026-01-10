@@ -778,18 +778,14 @@ const App: React.FC = () => {
       else if (player.hunger < 15) triggerAIEvent("胃部传来的剧痛在提醒我，如果再找不到食物，我就要被饿死了……");
       else if (player.hydration < 15) triggerAIEvent("嗓子干得像着了火，我需要水，哪怕只有一滴……");
 
+      let killsInThisFrame = 0;
       let nextEntities = prev.entities.map(e => {
         if (e.type !== Types.EntityType.MONSTER) return e;
 
-        // CRITICAL FIX: Handle monster death for key drop BEFORE skipping dead monsters
         if (e.health! <= 0) {
-          // Track monster death for kills
-          if (e.type === Types.EntityType.MONSTER) {
-            // Since we are inside nextEntities.map, we'll increment in a local counter or use a more direct approach
-            // Actually, incrementing inside map is tricky. Let's do it in a cleaner way.
-          }
+          // KEY DROP LOGIC
           if (e.data.hasKey) {
-            // Transform into a chest containing the key
+            killsInThisFrame++;
             return {
               ...e,
               type: Types.EntityType.CHEST,
@@ -804,8 +800,9 @@ const App: React.FC = () => {
               }
             };
           }
-          // Already dead monster that doesn't have a key (or already dropped it)
-          return e;
+          // OTHER MONSTERS: Remove and count as kill
+          killsInThisFrame++;
+          return null;
         }
 
         const dP = Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2);
@@ -912,7 +909,7 @@ const App: React.FC = () => {
           player.hitFlash = 0.5;
         }
         return nextE;
-      });
+      }).filter(Boolean) as Types.Entity[];
 
       // 11. CHASE ACTIVE TRACKING & AI TRIGGER
       const chaseActive = nextEntities.some(e => e.type === Types.EntityType.MONSTER && e.data.state === 'CHASING');
@@ -937,14 +934,7 @@ const App: React.FC = () => {
       // EXIT / VICTORY CHECK
       const distToExit = Math.sqrt((player.x - prev.exitX) ** 2 + (player.y - prev.exitY) ** 2);
       const isVictoryFrame = distToExit < 0.6;
-      let monsterKills = prev.monsterKills;
-
-      // Check for monster deaths in this frame to increment kills
-      const prevLiveMonsters = prev.entities.filter(e => e.type === Types.EntityType.MONSTER && e.health! > 0).length;
-      const currentLiveMonsters = nextEntities.filter(e => e.type === Types.EntityType.MONSTER && e.health! > 0).length;
-      if (prevLiveMonsters > currentLiveMonsters) {
-        monsterKills += (prevLiveMonsters - currentLiveMonsters);
-      }
+      let monsterKills = prev.monsterKills + killsInThisFrame;
 
       if (isVictoryFrame) {
         // Victory!
