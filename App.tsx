@@ -174,6 +174,7 @@ const App: React.FC = () => {
   const wallTopImgRef = useRef<HTMLImageElement | null>(null);
   const wallFaceImgRef = useRef<HTMLImageElement | null>(null);
   const floorImgRef = useRef<HTMLImageElement | null>(null);
+  const bossImgRef = useRef<HTMLImageElement | null>(null);
   const chestClosedImgRef = useRef<HTMLImageElement | null>(null);
   const chestOpenImgRef = useRef<HTMLImageElement | null>(null);
   const ammoImgRef = useRef<HTMLImageElement | null>(null);
@@ -222,11 +223,10 @@ const App: React.FC = () => {
     loadImg('/assets/wall_top.png', wallTopImgRef);
     loadImg('/assets/wall_face.png', wallFaceImgRef);
     loadImg('/assets/floor.png', floorImgRef);
+    loadImg('/assets/boss.png', bossImgRef);
     loadImg('/assets/chest_closed.png', chestClosedImgRef);
     loadImg('/assets/chest_open.png', chestOpenImgRef);
     loadImg('/assets/ammo.png', ammoImgRef);
-
-    loadImg('/assets/chest_open.png', chestOpenImgRef);
 
     // Initial session check
     const savedUser = localStorage.getItem('void_user');
@@ -1258,9 +1258,8 @@ const App: React.FC = () => {
 
             if (isBoss) {
               // Try to draw Boss
-              const bossImg = document.querySelector('img[src="/assets/boss.png"]') as HTMLImageElement;
-              if (bossImg && bossImg.complete) {
-                ctx.drawImage(bossImg, -size / 2 + shake, -size + bounce, size, size);
+              if (bossImgRef.current) {
+                ctx.drawImage(bossImgRef.current, -size / 2 + shake, -size + bounce, size, size);
               } else {
                 ctx.font = `${size}px serif`;
                 ctx.fillText('👁️', -size / 2, 0);
@@ -1547,7 +1546,7 @@ const App: React.FC = () => {
                     </div>
                     <div className="flex gap-4 md:gap-6 text-[11px] items-center font-mono">
                       <div className="text-cyan-400 flex items-center gap-1">
-                        <span className="opacity-50">⏱</span>{record.clear_time_seconds.toFixed(1)}s
+                        <span className="opacity-50">⏱ 撤离时长:</span>{record.clear_time_seconds.toFixed(1)}s
                       </div>
                       <div className="text-red-500 flex items-center gap-1">
                         <span className="opacity-50">💀</span>{record.monster_kills}
@@ -1940,7 +1939,7 @@ const App: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-4 mb-12 w-full max-w-sm">
             <div className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-2xl">
-              <div className="text-zinc-500 text-[9px] uppercase tracking-widest mb-1 font-bold">生存时长</div>
+              <div className="text-zinc-500 text-[9px] uppercase tracking-widest mb-1 font-bold">撤离时长</div>
               <div className="text-2xl text-white font-mono">{Math.floor(gameState.survivalTime)}s</div>
             </div>
             <div className="bg-zinc-900/50 border border-zinc-800 p-4 rounded-2xl">
