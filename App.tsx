@@ -1069,7 +1069,9 @@ const App: React.FC = () => {
         } else if (nextE.data.state === 'RETURNING') {
           // Can re-detect during return
           let detected = false;
-          if (dP < (nextE.type === Types.EntityType.BOSS ? 12.0 : 10.0) && isLineOfSightClear(player.x, player.y, nextE.x, nextE.y, prev.map)) detected = true;
+          // FIX: Add unconditional proximity detection (Smell/Hear) even without LOS
+          if (dP < 2.0) detected = true;
+          else if (dP < (nextE.type === Types.EntityType.BOSS ? 12.0 : 10.0) && isLineOfSightClear(player.x, player.y, nextE.x, nextE.y, prev.map)) detected = true;
           if (!detected && dP < 6.0 && player.sprinting) detected = true;
 
           if (detected) {
