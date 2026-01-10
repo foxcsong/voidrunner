@@ -360,6 +360,10 @@ const App: React.FC = () => {
             Types.ItemType.BATTERY, Types.ItemType.BATTERY, Types.ItemType.BATTERY, Types.ItemType.BATTERY,
             Types.ItemType.KNIFE // Only 1 knife in a pool of 17 (approx 1/4 of 1/5)
           ];
+          // Level 1: Boost KNIFE probability to ensure player gets a spare
+          if (currentLevel === 1) {
+            itemPool.push(Types.ItemType.KNIFE, Types.ItemType.KNIFE, Types.ItemType.KNIFE);
+          }
           let itType = itemPool[Math.floor(Math.random() * itemPool.length)];
 
           // Force gun placement
@@ -1906,7 +1910,8 @@ const App: React.FC = () => {
                     }
 
                     // NORMAL EQUIP LOGIC
-                    const nextP = autoEquip(p, item);
+                    // Remove autoEquip to force explicit slot assignment on click
+                    const nextP = { ...p };
                     if (item.type === Types.ItemType.FLASHLIGHT) {
                       nextP.equippedLeftId = item.id;
                       if (nextP.equippedPocketId === item.id) nextP.equippedPocketId = null;
@@ -1914,6 +1919,7 @@ const App: React.FC = () => {
                     }
                     else if (item.type === Types.ItemType.GUN || item.type === Types.ItemType.KNIFE) {
                       nextP.equippedRightId = item.id;
+                      // Determine what was previously in right hand, maybe move to pocket not implemented, just swap
                       if (nextP.equippedPocketId === item.id) nextP.equippedPocketId = null;
                       if (nextP.equippedLeftId === item.id) nextP.equippedLeftId = null;
                     }
