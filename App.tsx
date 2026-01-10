@@ -1391,6 +1391,16 @@ const App: React.FC = () => {
 
         {showManual && <GameManual onClose={() => setShowManual(false)} />}
 
+        {showAuth && (
+          <AuthForm
+            onLoginSuccess={(user) => {
+              setCurrentUser(user);
+              setShowAuth(false);
+            }}
+            onCancel={() => setShowAuth(false)}
+          />
+        )}
+
         {showLeaderboard && (
           <div className="fixed inset-0 bg-black/95 z-[1000] flex flex-col p-8 overflow-y-auto font-mono">
             <div className="max-w-xl mx-auto w-full py-10">
