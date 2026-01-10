@@ -482,9 +482,16 @@ const App: React.FC = () => {
 
   // Audio Initialization
   useEffect(() => {
-    const audio = new Audio('/assets/Abyssal%20Circuit%20Maze.mp3');
+    // Use bgm.mp3 to avoid URL encoding issues
+    const audio = new Audio('/assets/bgm.mp3');
     audio.loop = true;
-    audio.volume = 0.4; // Default volume 40%
+    audio.volume = 0.4;
+    audio.preload = 'auto'; // Force preload
+
+    // Add event listeners for debugging
+    audio.addEventListener('error', (e) => console.error("BGM Error:", e));
+    audio.addEventListener('canplay', () => console.log("BGM Ready to play"));
+
     bgmRef.current = audio;
 
     return () => {
@@ -494,8 +501,25 @@ const App: React.FC = () => {
   }, []);
 
   const playBgm = () => {
-    if (bgmRef.current && bgmRef.current.paused) {
-      bgmRef.current.play().catch(e => console.log("Audio play failed (user interaction needed):", e));
+    const audio = bgmRef.current;
+    if (audio) {
+      // Reset if needed
+      if (audio.error) {
+        console.log("Reloading BGM due to error");
+        audio.load();
+      }
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => console.log("BGM Playing Successfully"))
+          .catch(error => {
+            console.error("BGM Playback Failed:", error);
+            // Auto-retry once on user interaction if blocked? 
+            // The browser usually blocks if not user-initiated. 
+            // But this function IS called from user click (initGame).
+          });
+      }
     }
   };
 
