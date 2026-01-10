@@ -1322,9 +1322,11 @@ const App: React.FC = () => {
     return (
       <div className="w-screen h-screen bg-black flex flex-col items-center justify-center p-10 font-mono text-zinc-100">
         <div className="absolute inset-0 bg-blue-900/5 pointer-events-none" />
-        <h1 className="text-7xl font-black tracking-widest mb-2 animate-pulse text-zinc-50 text-center">无尽虚空：迷宫</h1>
+        <h1 className="text-5xl md:text-7xl font-black tracking-widest mb-4 animate-pulse text-zinc-50 text-center leading-tight">
+          无尽虚空：迷宫
+        </h1>
         <p
-          className="text-zinc-500 mb-16 tracking-[0.5em] text-[10px] uppercase cursor-pointer select-none"
+          className="text-zinc-500 mb-12 md:mb-16 tracking-[0.4em] md:tracking-[0.5em] text-[10px] uppercase cursor-pointer select-none"
           onClick={() => {
             setVersionClickCount(prev => {
               if (prev + 1 >= 5) {
@@ -1399,7 +1401,7 @@ const App: React.FC = () => {
           )}
         </div>
 
-        <div className="mt-24 flex gap-12 opacity-20 text-[9px] font-bold uppercase tracking-widest">
+        <div className="mt-16 md:mt-24 flex flex-wrap justify-center gap-6 md:gap-12 opacity-20 text-[9px] font-bold uppercase tracking-widest text-center px-4">
           <div>区域大小: {Constants.MAP_SIZE}^2</div>
           <div>认证: 已安全</div>
           <div>核心: 稳定</div>
@@ -1425,14 +1427,18 @@ const App: React.FC = () => {
               <h2 className="text-3xl font-black text-white mb-8 border-b border-zinc-800 pb-4 uppercase italic">迷宫英雄榜 // TOP_20</h2>
               <div className="space-y-2">
                 {leaderboardData.map((record, i) => (
-                  <div key={i} className="flex justify-between p-4 bg-zinc-900/50 border border-zinc-800 rounded-lg">
-                    <div className="flex gap-4 items-center">
-                      <span className="text-zinc-600 font-bold w-6">#{i + 1}</span>
-                      <span className="text-white font-bold">{record.username}</span>
+                  <div key={i} className="flex justify-between items-center p-4 bg-zinc-900/60 border border-zinc-800/50 rounded-xl hover:border-zinc-700 transition-colors">
+                    <div className="flex gap-4 items-center min-w-0">
+                      <span className="text-zinc-600 font-mono text-sm w-6">#{(i + 1).toString().padStart(2, '0')}</span>
+                      <span className="text-white font-bold truncate">{record.username}</span>
                     </div>
-                    <div className="flex gap-6 text-[10px] items-center">
-                      <div className="text-cyan-500">⏱ {record.clear_time_seconds.toFixed(1)}s</div>
-                      <div className="text-red-500">💀 {record.monster_kills}</div>
+                    <div className="flex gap-4 md:gap-6 text-[11px] items-center font-mono">
+                      <div className="text-cyan-400 flex items-center gap-1">
+                        <span className="opacity-50">⏱</span>{record.clear_time_seconds.toFixed(1)}s
+                      </div>
+                      <div className="text-red-500 flex items-center gap-1">
+                        <span className="opacity-50">💀</span>{record.monster_kills}
+                      </div>
                     </div>
                   </div>
                 ))}

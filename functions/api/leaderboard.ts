@@ -5,9 +5,10 @@ export const onRequest = async (context: any) => {
 
     if (request.method === 'GET') {
         const records = await env.DB.prepare(`
-      SELECT users.username, clear_records.clear_time_seconds, clear_records.monster_kills, clear_records.created_at
-      FROM clear_records
-      JOIN users ON users.id = clear_records.user_id
+      SELECT u.username, MIN(r.clear_time_seconds) as clear_time_seconds, r.monster_kills, r.created_at
+      FROM clear_records r
+      JOIN users u ON u.id = r.user_id
+      GROUP BY r.user_id
       ORDER BY clear_time_seconds ASC
       LIMIT 20
     `).all();
