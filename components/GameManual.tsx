@@ -114,6 +114,43 @@ export const GameManual: React.FC<GameManualProps> = ({ onClose }) => {
                     </div>
                 </section>
 
+                <section className="space-y-4">
+                    <h3 className="text-red-600 font-bold tracking-widest uppercase border-l-4 border-red-800 pl-4 py-1 animate-pulse">终极梦魇：终焉之眼 (THE BOSS)</h3>
+                    <div className="bg-gradient-to-br from-red-950/30 to-black p-6 rounded-xl border border-red-900/50 relative overflow-hidden group">
+                        <div className="absolute inset-0 bg-red-900/5 group-hover:bg-red-900/10 transition-colors" />
+                        <h4 className="text-red-500 font-bold text-sm mb-4 flex items-center gap-2">👁️ 独眼巨人 (Cyclops)</h4>
+
+                        <div className="space-y-4">
+                            <div className="flex flex-col gap-2">
+                                <span className="text-[10px] text-red-300 font-bold uppercase tracking-wider">特性一：相位装甲 (Phase Armor)</span>
+                                <p className="text-[10px] text-zinc-400 leading-relaxed">
+                                    Boss 在生命值高于 50% 时处于“装甲形态”。此状态下 <span className="text-white font-bold">完全免疫近战物理攻击 (匕首无效)</span>。
+                                    <br /><span className="text-yellow-500 italic">战术建议：保留所有枪械弹药，以此阶段进行远程火力压制。</span>
+                                </p>
+                            </div>
+
+                            <div className="flex flex-col gap-2">
+                                <span className="text-[10px] text-red-300 font-bold uppercase tracking-wider">特性二：暴怒视界 (Rage Vision)</span>
+                                <p className="text-[10px] text-zinc-400 leading-relaxed">
+                                    当生命值降至 50% 以下，装甲破碎，Boss 进入“暴怒红眼形态”。
+                                    <br />此时匕首攻击可对其造成有效伤害，但 Boss 的移动速度将 <span className="text-red-500 font-bold">显著提升</span> 并疯狂追击。
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 mt-2">
+                                <div className="bg-black/50 p-2 rounded border border-red-900/30 text-center">
+                                    <div className="text-[8px] text-zinc-600 uppercase">HP</div>
+                                    <div className="text-red-500 font-mono font-bold">1000+</div>
+                                </div>
+                                <div className="bg-black/50 p-2 rounded border border-red-900/30 text-center">
+                                    <div className="text-[8px] text-zinc-600 uppercase">感知范围</div>
+                                    <div className="text-red-500 font-mono font-bold">极远 (Very Far)</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
                 <footer className="pt-10 flex flex-col items-center gap-4">
                     <div className="text-zinc-600 text-[9px] uppercase tracking-widest animate-pulse italic">
                         一旦进入深层虚空，所有通信链路将断开。愿理智引导你的脚步。
