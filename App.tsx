@@ -191,6 +191,9 @@ const App: React.FC = () => {
   const chestOpenImgRef = useRef<HTMLImageElement | null>(null);
   const ammoImgRef = useRef<HTMLImageElement | null>(null);
 
+  // Audio Ref
+  const bgmRef = useRef<HTMLAudioElement | null>(null);
+
   const particlesRef = useRef<Particle[]>([]);
   const nextParticleIdRef = useRef(0);
 
@@ -265,6 +268,9 @@ const App: React.FC = () => {
   };
 
   const initGame = useCallback(async (loadExisting = false) => {
+    // Start BGM immediately on interaction
+    playBgm();
+
     if (!currentUser) {
       alert("请先登录虚空终端");
       setShowAuth(true);
@@ -470,8 +476,28 @@ const App: React.FC = () => {
       setScreen('PLAYING');
       damageNumbersRef.current = [];
       bulletTrailsRef.current = [];
+      bulletTrailsRef.current = [];
     }, 14000);
   }, [currentUser]);
+
+  // Audio Initialization
+  useEffect(() => {
+    const audio = new Audio('/assets/Abyssal%20Circuit%20Maze.mp3');
+    audio.loop = true;
+    audio.volume = 0.4; // Default volume 40%
+    bgmRef.current = audio;
+
+    return () => {
+      audio.pause();
+      audio.src = '';
+    };
+  }, []);
+
+  const playBgm = () => {
+    if (bgmRef.current && bgmRef.current.paused) {
+      bgmRef.current.play().catch(e => console.log("Audio play failed (user interaction needed):", e));
+    }
+  };
 
   const saveAndExit = async () => {
     if (gameState && currentUser) {
