@@ -1440,7 +1440,9 @@ const App: React.FC = () => {
 
       return true;
     });
-    ctx.restore();
+    ctx.restore(); // Restore lighter composite
+
+    ctx.restore(); // RESTORE CAMERA TRANSFORM
 
     // DYNAMIC VISION MASK
     const visionCanvas = document.createElement('canvas');
