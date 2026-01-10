@@ -88,3 +88,21 @@ export async function generateVictorySpeech(time: number, kills: number): Promis
     return "你逃离了，但虚空的阴影将永远留在你的灵魂深处。";
   }
 }
+
+export async function getFallingMonologue(level: number): Promise<string> {
+  const prompt = `你是一个深沉、绝望的心理独白生成器。
+  玩家正在坠入“无尽虚空”的第 ${level} 层。
+  请生成一段简短的（30字以内）、关于下坠、黑暗、再次深入的心理独白。
+  风格：克苏鲁、压抑、迷幻。
+  直接返回文字，不要有引号。`;
+
+  try {
+    const result = await ai.models.generateContent({
+      model: 'gemini-1.5-flash',
+      contents: [{ role: 'user', parts: [{ text: prompt }] }]
+    });
+    return result.text?.trim() || "再次坠落... 无尽的黑暗在呼唤...";
+  } catch (e) {
+    return "再次坠落... 无尽的黑暗在呼唤...";
+  }
+}

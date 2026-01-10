@@ -4,7 +4,7 @@ import * as Types from './types';
 import * as Constants from './constants';
 import * as MazeGen from './engine/MazeGen';
 import { cloudflare } from './services/cloudflare';
-import { getAtmosphericMessage, generateLayout, generateVictorySpeech } from './services/geminiService';
+import { getAtmosphericMessage, generateLayout, generateVictorySpeech, getFallingMonologue } from './services/geminiService';
 import { AuthForm } from './components/AuthForm';
 import { GameManual } from './components/GameManual';
 import { AdminPanel } from './components/AdminPanel';
@@ -169,6 +169,7 @@ const App: React.FC = () => {
   const [showAdmin, setShowAdmin] = useState(false);
   const [versionClickCount, setVersionClickCount] = useState(0);
   const [leaderboardData, setLeaderboardData] = useState<any[]>([]);
+  const [loadingText, setLoadingText] = useState<string>("正在掉入无尽虚空...");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const keysRef = useRef<Record<string, boolean>>({});
   const lastTimeRef = useRef<number>(performance.now());
@@ -311,7 +312,9 @@ const App: React.FC = () => {
         items: [
           { id: 'start-knife', type: Types.ItemType.KNIFE, name: ITEM_NAMES[Types.ItemType.KNIFE], durability: 100 },
           { id: 'start-water', type: Types.ItemType.WATER, name: ITEM_NAMES[Types.ItemType.WATER], count: 1 },
-          { id: 'start-fl', type: Types.ItemType.FLASHLIGHT, name: ITEM_NAMES[Types.ItemType.FLASHLIGHT], durability: 100 }
+          currentLevel > 1
+            ? { id: 'start-batt', type: Types.ItemType.BATTERY, name: ITEM_NAMES[Types.ItemType.BATTERY], count: 1 }
+            : { id: 'start-fl', type: Types.ItemType.FLASHLIGHT, name: ITEM_NAMES[Types.ItemType.FLASHLIGHT], durability: 100 }
         ]
       }
     });
@@ -487,6 +490,9 @@ const App: React.FC = () => {
     });
 
     // Narrative transition
+    setLoadingText("正在掉入无尽虚空...");
+    getFallingMonologue(currentLevel).then(text => setLoadingText(text));
+
     loadingTimeoutRef.current = setTimeout(() => {
       setScreen('PLAYING');
       damageNumbersRef.current = [];
@@ -1734,9 +1740,11 @@ const App: React.FC = () => {
 
   if (screen === 'LOADING_AI') {
     return (
-      <div className="fixed inset-0 flex flex-col items-center justify-center pointer-events-none z-[100]">
+      <div className="fixed inset-0 flex flex-col items-center justify-center pointer-events-none z-[100] bg-black">
         <h2 className="text-6xl md:text-9xl font-black text-white tracking-widest animate-pulse opacity-20">VOID</h2>
-        <div className="mt-8 text-xs text-zinc-500 tracking-[1em] uppercase animate-bounce">Generating Neural Map...</div>
+        <div className="mt-8 text-sm text-zinc-400 tracking-[0.2em] uppercase animate-pulse font-mono max-w-lg text-center px-8 leading-relaxed">
+          {loadingText}
+        </div>
         <div className="absolute bottom-10 w-64 h-1 bg-zinc-900 rounded-full overflow-hidden">
           <div className="h-full bg-zinc-500 animate-[loading_14s_ease-in-out_forwards]" />
         </div>
