@@ -198,7 +198,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                         {records.length === 0 && <div className="text-center py-20 text-zinc-700 uppercase font-bold tracking-widest italic text-xs">尚无任何通关记录通过虚空审查</div>}
                         {records.map(r => (
                             <div key={r.id} className="flex justify-between items-center p-6 bg-zinc-900/30 border border-zinc-900 hover:border-zinc-700 transition-all rounded-2xl group">
-                                <div className="flex-1 grid grid-cols-3 gap-8">
+                                <div className="flex-1 grid grid-cols-4 gap-4">
                                     <div>
                                         <div className="text-white font-black text-lg tracking-tight mb-1">{r.username}</div>
                                         <div className="text-[10px] text-zinc-600 uppercase font-bold tracking-widest">RECORD_ID_{r.id}</div>
@@ -210,6 +210,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
                                     <div className="flex flex-col justify-center">
                                         <div className="text-red-500 font-black text-xl italic">{r.monster_kills}</div>
                                         <div className="text-[9px] text-zinc-600 uppercase">虚空收割 // KILLS</div>
+                                    </div>
+                                    {/* Level Display */}
+                                    <div className="flex flex-col justify-center">
+                                        {(() => {
+                                            const depth = r.extra_stats ? (JSON.parse(r.extra_stats).depth || 1) : 1;
+                                            return (
+                                                <>
+                                                    <div className="text-yellow-500 font-black text-xl italic">Lv.{depth}</div>
+                                                    <div className="text-[9px] text-zinc-600 uppercase">迷宫深度 // DEPTH</div>
+                                                </>
+                                            )
+                                        })()}
                                     </div>
                                 </div>
                                 <div className="flex items-center ml-4">

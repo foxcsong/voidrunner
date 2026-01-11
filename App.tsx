@@ -1637,7 +1637,7 @@ const App: React.FC = () => {
             });
           }}
         >
-          迷宫生存模拟器 v3.2
+          迷宫生存模拟器 v3.3 (Endless Patch)
         </p>
 
         <div className="flex flex-col gap-6 w-96 relative z-10">
