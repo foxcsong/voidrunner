@@ -178,6 +178,7 @@ const App: React.FC = () => {
   const damageNumbersRef = useRef<Types.DamageNumber[]>([]);
   const bulletTrailsRef = useRef<BulletTrail[]>([]);
   const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSubmittedLevelRef = useRef(0);
 
   // Asset Refs
   const playerImgRef = useRef<HTMLImageElement | null>(null);
@@ -823,6 +824,18 @@ const App: React.FC = () => {
       let nextMessage = nextMessageTimeout <= 0 ? '' : prev.message;
 
       const player = { ...prev.player };
+
+      // AUTO SUBMIT RECORD if new level reached (and not already submitted)
+      if (prev.currentLevel > lastSubmittedLevelRef.current && prev.currentLevel > 1 && currentUser) {
+        lastSubmittedLevelRef.current = prev.currentLevel;
+        // Silent submit
+        cloudflare.submitRecord({
+          userId: currentUser.id,
+          clearTime: prev.survivalTime,
+          monsterKills: prev.monsterKills,
+          depth: prev.currentLevel
+        }).catch(e => console.error("Auto submit failed", e));
+      }
 
       // Update Action Timer
       if (player.actionState === 'ATTACK_KNIFE' || player.actionState === 'ATTACK_GUN') {
@@ -2089,8 +2102,9 @@ const App: React.FC = () => {
                   let p = { ...s.player };
 
                   chest.data.items.forEach((item: any) => {
-                    p.inventory.push(item);
-                    p = autoEquip(p, item);
+                    const uniqueItem = { ...item, id: `${item.id}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}` };
+                    p.inventory.push(uniqueItem);
+                    // p = autoEquip(p, item);
                   });
                   chest.data.items = [];
                   return { ...s, player: p, activeChestId: null };
@@ -2111,8 +2125,9 @@ const App: React.FC = () => {
 
                     // Add to player
                     let p = { ...s.player };
-                    p.inventory.push(item);
-                    p = autoEquip(p, item);
+                    const uniqueItem = { ...item, id: `${item.id}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}` };
+                    p.inventory.push(uniqueItem);
+                    // p = autoEquip(p, item); // Removed auto-equip on single loot to enforce manual equip interaction
 
                     chest.data.items = chest.data.items.filter((i: any) => i.id !== it.id);
 
