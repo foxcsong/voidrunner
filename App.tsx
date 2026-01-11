@@ -310,11 +310,11 @@ const App: React.FC = () => {
       data: {
         isOpen: false,
         items: [
-          { id: 'start-knife', type: Types.ItemType.KNIFE, name: ITEM_NAMES[Types.ItemType.KNIFE], durability: 100 },
-          { id: 'start-water', type: Types.ItemType.WATER, name: ITEM_NAMES[Types.ItemType.WATER], count: 1 },
+          { id: `l${currentLevel}-start-knife`, type: Types.ItemType.KNIFE, name: ITEM_NAMES[Types.ItemType.KNIFE], durability: 100 },
+          { id: `l${currentLevel}-start-water`, type: Types.ItemType.WATER, name: ITEM_NAMES[Types.ItemType.WATER], count: 1 },
           currentLevel > 1
-            ? { id: 'start-batt', type: Types.ItemType.BATTERY, name: ITEM_NAMES[Types.ItemType.BATTERY], count: 1 }
-            : { id: 'start-fl', type: Types.ItemType.FLASHLIGHT, name: ITEM_NAMES[Types.ItemType.FLASHLIGHT], durability: 100 }
+            ? { id: `l${currentLevel}-start-batt`, type: Types.ItemType.BATTERY, name: ITEM_NAMES[Types.ItemType.BATTERY], count: 1 }
+            : { id: `l${currentLevel}-start-fl`, type: Types.ItemType.FLASHLIGHT, name: ITEM_NAMES[Types.ItemType.FLASHLIGHT], durability: 100 }
         ]
       }
     });
@@ -373,7 +373,7 @@ const App: React.FC = () => {
           }
 
           items.push({
-            id: `it-${i}-${j}`,
+            id: `l${currentLevel}-it-${i}-${j}`,
             type: itType,
             name: ITEM_NAMES[itType],
             durability: (itType === Types.ItemType.KNIFE) ? 100 : undefined,
@@ -399,11 +399,11 @@ const App: React.FC = () => {
       const fallbackPos = shuffledDeadEnds.find(p => Math.sqrt((p.x - startX) ** 2 + (p.y - startY) ** 2) > 5) || exitPos;
       const targetEntity = entities.find(e => e.x === fallbackPos.x + 0.5 && e.y === fallbackPos.y + 0.5);
       if (targetEntity && targetEntity.type === Types.EntityType.CHEST) {
-        targetEntity.data.items.push({ id: 'force-gun', type: Types.ItemType.GUN, name: ITEM_NAMES[Types.ItemType.GUN], count: 12 });
+        targetEntity.data.items.push({ id: `l${currentLevel}-force-gun`, type: Types.ItemType.GUN, name: ITEM_NAMES[Types.ItemType.GUN], count: 12 });
       } else {
         entities.push({
           id: 'force-gun-chest', x: fallbackPos.x + 0.5, y: fallbackPos.y + 0.5, type: Types.EntityType.CHEST,
-          data: { isOpen: false, items: [{ id: 'force-gun', type: Types.ItemType.GUN, name: ITEM_NAMES[Types.ItemType.GUN], count: 12 }] }
+          data: { isOpen: false, items: [{ id: `l${currentLevel}-force-gun`, type: Types.ItemType.GUN, name: ITEM_NAMES[Types.ItemType.GUN], count: 12 }] }
         });
       }
     }
@@ -471,7 +471,7 @@ const App: React.FC = () => {
     const chests = entities.filter(e => e.type === Types.EntityType.CHEST && e.id !== 'starter-chest');
     const shuffledChests = chests.sort(() => Math.random() - 0.5);
     for (let i = 0; i < Math.min(2, shuffledChests.length); i++) {
-      shuffledChests[i].data.items.push({ id: `key-chest-${i}`, type: Types.ItemType.KEY, name: ITEM_NAMES[Types.ItemType.KEY] });
+      shuffledChests[i].data.items.push({ id: `l${currentLevel}-key-chest-${i}`, type: Types.ItemType.KEY, name: ITEM_NAMES[Types.ItemType.KEY] });
     }
     const monsters = entities.filter(e => e.type === Types.EntityType.MONSTER);
     const randomMonster = monsters[Math.floor(Math.random() * monsters.length)];
@@ -984,7 +984,7 @@ const App: React.FC = () => {
               data: {
                 isOpen: false,
                 items: [{
-                  id: `key-drop-${e.id}`,
+                  id: `l${prev.currentLevel}-key-drop-${e.id}-${Date.now()}`,
                   type: Types.ItemType.KEY,
                   name: ITEM_NAMES[Types.ItemType.KEY]
                 }]
@@ -2146,7 +2146,18 @@ const App: React.FC = () => {
         <div className="fixed inset-0 bg-black z-[99999] flex flex-col items-center justify-center text-center p-10">
           <h1 className="text-8xl font-black text-red-600 mb-4 flicker uppercase leading-none tracking-tighter">已牺牲</h1>
           <p className="text-zinc-500 mb-16 italic text-sm tracking-[0.5em] font-bold uppercase">"{gameState.deathReason}"</p>
-          <button onClick={returnToMenu} className="px-12 py-4 bg-zinc-800 border border-zinc-700 text-white text-xs hover:bg-zinc-700 transition-all uppercase font-black tracking-[0.3em] rounded-lg active:scale-95">重启任务</button>
+          <button onClick={() => {
+            if (currentUser) {
+              // Submit record on death too
+              cloudflare.submitRecord({
+                userId: currentUser.id,
+                clearTime: gameState.survivalTime,
+                monsterKills: gameState.monsterKills,
+                depth: gameState.currentLevel
+              }).catch(console.error);
+            }
+            returnToMenu();
+          }} className="px-12 py-4 bg-zinc-800 border border-zinc-700 text-white text-xs hover:bg-zinc-700 transition-all uppercase font-black tracking-[0.3em] rounded-lg active:scale-95">重启任务</button>
         </div>
       )}
 
@@ -2173,7 +2184,18 @@ const App: React.FC = () => {
 
             <div className="flex flex-col gap-4">
               <button
-                onClick={() => initGame(false, true, gameState.player, gameState.currentLevel + 1)}
+                onClick={() => {
+                  if (currentUser) {
+                    // Checkpoint submit: Save progress even if they continue
+                    cloudflare.submitRecord({
+                      userId: currentUser.id,
+                      clearTime: gameState.survivalTime,
+                      monsterKills: gameState.monsterKills,
+                      depth: gameState.currentLevel
+                    }).catch(console.error);
+                  }
+                  initGame(false, true, gameState.player, gameState.currentLevel + 1);
+                }}
                 className="w-full py-4 bg-red-900/40 border border-red-800 hover:bg-red-800 hover:text-white transition-all rounded-xl font-bold uppercase tracking-widest text-red-400 group relative overflow-hidden"
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-red-500/10 to-transparent translate-x-[-100%] group-hover:animate-shine" />
